@@ -378,6 +378,20 @@ function fmtDate(dateStr){
   return months[Number(parts[1])-1] + ' ' + Number(parts[2]) + ', ' + parts[0];
 }
 
+function addOneMonth(dateStr){
+  if(!dateStr) return dateStr;
+  var parts = dateStr.split('-');
+  var y = Number(parts[0]), m = Number(parts[1])-1, d = Number(parts[2]);
+  var targetMonth = m + 1;
+  var targetYear = y + Math.floor(targetMonth / 12);
+  targetMonth = ((targetMonth % 12) + 12) % 12;
+  var lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  var newDay = Math.min(d, lastDay);
+  var mm = String(targetMonth + 1).padStart(2, '0');
+  var dd = String(newDay).padStart(2, '0');
+  return targetYear + '-' + mm + '-' + dd;
+}
+
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -910,8 +924,13 @@ document.getElementById('importFile').addEventListener('change', function(e){
 });
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Reset month: mark all bills as unpaid?')) return;
-  DATA.bills.forEach(function(b){ b.paid = false; });
+  if(!confirm('Reset month: paid bills roll their due date forward one month and unmark as paid. Unpaid bills are left as-is.')) return;
+  DATA.bills.forEach(function(b){
+    if(b.paid){
+      b.dueDate = addOneMonth(b.dueDate);
+      b.paid = false;
+    }
+  });
   save();
 });
 
