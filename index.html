@@ -82,14 +82,14 @@ header h1{
 .menu-dropdown button:last-child{ border-bottom:none; }
 .menu-dropdown button:active{ background:rgba(70,110,200,0.12); }
 
-.reset-pill{
-  display:block; width:100%; margin-top:12px;
+.reset-bar{
+  display:block; width:100%; margin-top:24px;
   background:var(--ink); color:var(--paper); border:none;
-  border-radius:999px; padding:12px 0;
+  padding:12px 0;
   font-size:14px; font-weight:bold; letter-spacing:1px;
   text-align:center; cursor:pointer;
 }
-.reset-pill:active{ background:var(--rule-solid); }
+.reset-bar:active{ background:var(--rule-solid); }
 
 /* ---------- ruled paper content area ---------- */
 main{
@@ -253,7 +253,6 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
         <button id="btnImport" type="button">Import</button>
       </div>
     </div>
-    <button id="btnReset" class="reset-pill" type="button">Start next month</button>
   </header>
 
   <main>
@@ -323,6 +322,8 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div id="income-list" class="list"></div>
       <button class="add-btn" id="addIncomeBtn" type="button">+ Add income</button>
       <div id="incomeForm"></div>
+
+      <button id="btnReset" class="reset-bar" type="button">Start next month</button>
 
     </section>
 
