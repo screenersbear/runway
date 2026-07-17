@@ -1,6 +1,6 @@
 {
-  "name": "Runway",
-  "short_name": "Runway",
+  "name": "Let The King See",
+  "short_name": "Let The King See",
   "description": "Forward-looking cash runway tracker",
   "start_url": "./index.html",
   "scope": "./",
