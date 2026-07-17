@@ -145,6 +145,17 @@ main{
 
 .muted{ opacity:0.55; }
 
+.info-toggle{ cursor:pointer; }
+.info-dot{ font-size:11px; opacity:0.5; margin-left:3px; }
+.info-box{
+  display:none;
+  font-size:12.5px; line-height:18px; font-style:italic; opacity:0.85;
+  padding:2px 10px 10px 10px; margin-top:-4px;
+  border-left:2px solid var(--rule-solid);
+}
+.info-box.open{ display:block; }
+#rw-verdict{ cursor:pointer; }
+
 /* ---------- accounts ---------- */
 .acct-row{ display:flex; justify-content:space-between; align-items:baseline; line-height:var(--row); padding-bottom:6px; }
 .acct-row.excluded{ opacity:0.5; }
@@ -260,14 +271,16 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN A: RUNWAY ================= -->
     <section id="screen-runway" class="screen active">
 
-      <div class="label line">SPENDABLE CASH</div>
+      <div class="label line info-toggle" data-target="info-spendable">SPENDABLE CASH <span class="info-dot">&#9432;</span></div>
+      <div class="info-box" id="info-spendable">Every account that isn't marked as a backstop, added together. This is cash you can use today.</div>
       <div class="value" id="rw-spendable">$0.00</div>
 
       <div id="rw-accounts-list" class="list"></div>
       <button class="add-btn" id="rw-addAccountBtn" type="button">+ Add account</button>
       <div id="rw-accountForm"></div>
 
-      <div class="section-title" style="margin-top:18px;">BILLS DUE</div>
+      <div class="section-title info-toggle" data-target="info-bills" style="margin-top:18px;">BILLS DUE <span class="info-dot">&#9432;</span></div>
+      <div class="info-box" id="info-bills">Unpaid bills due within the window below, using whichever amount &mdash; full or minimum &mdash; you've set for each one.</div>
       <div class="line">
         next <input type="number" id="rw-windowDays" min="1" style="width:52px; border:none; border-bottom:1px solid var(--ink); background:transparent; text-align:center;"> days &mdash; <strong id="rw-billsSum">$0.00</strong>
       </div>
@@ -275,19 +288,25 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div class="section-title" style="margin-top:14px;">LEFTOVER</div>
       <div class="two-col">
         <div>
-          <div class="label">CONFIRMED</div>
+          <div class="label info-toggle" data-target="info-confirmed">CONFIRMED <span class="info-dot">&#9432;</span></div>
           <div class="value small" id="rw-confirmed">$0.00</div>
         </div>
         <div>
-          <div class="label">WITH LIKELY</div>
+          <div class="label info-toggle" data-target="info-likely">WITH LIKELY <span class="info-dot">&#9432;</span></div>
           <div class="value small" id="rw-likely">$0.00</div>
         </div>
       </div>
-      <div class="line hint" id="rw-hopeful" style="padding-top:8px;"></div>
+      <div class="info-box" id="info-confirmed">Spendable cash, plus income you're certain about and due within your window, minus bills due in that window. The number you can trust.</div>
+      <div class="info-box" id="info-likely">Confirmed leftover, plus income you consider likely but not yet guaranteed.</div>
+
+      <div class="label line info-toggle" data-target="info-hopeful" style="margin-top:10px;">HOPEFUL <span class="info-dot">&#9432;</span></div>
+      <div class="info-box" id="info-hopeful">Income you're hoping for but can't count on yet. Shown for awareness only &mdash; it's never added into confirmed or likely.</div>
+      <div class="value small muted" id="rw-hopeful">$0.00</div>
 
       <div class="warning" id="rw-floorWarning" style="display:none;"></div>
 
       <div class="verdict" id="rw-verdict"></div>
+      <div class="info-box" id="info-verdict">A plain read on your confirmed leftover &mdash; whether it covers everything due, and whether it stays above your float floor.</div>
 
     </section>
 
@@ -524,10 +543,7 @@ function renderRunway(){
   document.getElementById('rw-confirmed').textContent = fmt(confirmedLeftover());
   document.getElementById('rw-likely').textContent = fmt(likelyLeftover());
 
-  var hopeful = hopefulSum();
-  document.getElementById('rw-hopeful').textContent = hopeful > 0
-    ? 'Plus ' + fmt(hopeful) + ' hopeful (not counted above).'
-    : '';
+  document.getElementById('rw-hopeful').textContent = fmt(hopefulSum());
 
   var floor = num(DATA.floatFloor);
   var cl = confirmedLeftover();
@@ -677,6 +693,17 @@ function renderAll(){
   renderBills();
   renderPriority();
 }
+
+/* ============ INFO TOGGLES ============ */
+document.querySelectorAll('.info-toggle').forEach(function(el){
+  el.addEventListener('click', function(){
+    var box = document.getElementById(el.dataset.target);
+    if(box) box.classList.toggle('open');
+  });
+});
+document.getElementById('rw-verdict').addEventListener('click', function(){
+  document.getElementById('info-verdict').classList.toggle('open');
+});
 
 /* ============ TAB NAV ============ */
 document.querySelectorAll('#tabbar .tab').forEach(function(btn){
