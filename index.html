@@ -312,6 +312,9 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div class="line">
         next <input type="number" id="rw-windowDays" min="1" style="width:52px; border:none; border-bottom:1px solid var(--ink); background:transparent; text-align:center;"> days &mdash; <strong id="rw-billsSum">$0.00</strong>
       </div>
+      <div class="line" style="padding-top:2px;">
+        bills paid <strong id="rw-billsPaidFrac">$0.00 / $0.00</strong>
+      </div>
 
       <div class="section-title" style="margin-top:14px;">LEFTOVER</div>
       <div class="two-col">
@@ -507,6 +510,16 @@ function billsDueSum(days){
   return billsInWindow(days).reduce(function(s,b){ return s + billAmount(b); }, 0);
 }
 
+function billsPaidInWindow(days){
+  return DATA.bills.filter(function(b){
+    if(!b.paid) return false;
+    return daysUntil(b.dueDate) <= days;
+  });
+}
+function billsPaidSum(days){
+  return billsPaidInWindow(days).reduce(function(s,b){ return s + billAmount(b); }, 0);
+}
+
 function incomeInWindow(days, confidences){
   return DATA.income.filter(function(i){
     return confidences.indexOf(i.confidence) !== -1 && daysUntil(i.expectedDate) <= days;
@@ -571,6 +584,9 @@ function renderRunway(){
 
   var billsSum = billsDueSum(windowDays());
   document.getElementById('rw-billsSum').textContent = fmt(billsSum);
+
+  var paidSum = billsPaidSum(windowDays());
+  document.getElementById('rw-billsPaidFrac').textContent = fmt(paidSum) + ' / ' + fmt(paidSum + billsSum);
 
   document.getElementById('rw-confirmed').textContent = fmt(confirmedLeftover());
   document.getElementById('rw-likely').textContent = fmt(likelyLeftover());
