@@ -55,6 +55,7 @@ header{
   cursor:pointer;
 }
 .menu-btn span{ display:block; width:18px; height:2px; background:var(--ink); }
+.menu-btn:active{ background:rgba(70,110,200,0.15); }
 header h1{
   color:var(--danger);
   font-size:22px;
@@ -146,6 +147,7 @@ main{
 .muted{ opacity:0.55; }
 
 .info-toggle{ cursor:pointer; }
+.info-toggle:active{ background:rgba(70,110,200,0.12); }
 .info-dot{ font-size:11px; opacity:0.5; margin-left:3px; }
 .info-box{
   display:none;
@@ -155,6 +157,7 @@ main{
 }
 .info-box.open{ display:block; }
 #rw-verdict{ cursor:pointer; }
+#rw-verdict:active{ background:rgba(70,110,200,0.12); }
 
 /* ---------- accounts ---------- */
 .acct-row{ display:flex; justify-content:space-between; align-items:baseline; line-height:var(--row); padding-bottom:2px; }
@@ -186,12 +189,14 @@ main{
 .item-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; line-height:22px; }
 .item-name{ font-weight:bold; flex:1; min-width:0; overflow-wrap:break-word; }
 .item-amt{ white-space:nowrap; }
+.item.overdue .item-name, .item.overdue .item-amt{ color:var(--danger); }
 .item-sub{ font-size:12.5px; opacity:0.75; line-height:18px; margin-top:2px; }
 .item-actions{ display:flex; gap:12px; margin-top:6px; }
 .item-actions button{
   background:none; border:none; padding:4px 0; color:var(--ink); text-decoration:underline;
   text-underline-offset:3px; font-size:12.5px; cursor:pointer;
 }
+.item-actions button:active{ color:var(--rule-solid); }
 .item-flag{ margin-top:6px; font-size:12.5px; color:var(--danger); line-height:16px; }
 .badge{ font-size:11px; padding:1px 6px; border:1px solid currentColor; border-radius:2px; letter-spacing:0.5px; }
 .badge.confirmed{ color:var(--ink); }
@@ -199,6 +204,7 @@ main{
 .badge.hopeful{ color:var(--ink); opacity:0.45; }
 .badge.due-soon{ color:var(--danger); border-color:var(--danger); }
 .badge.urgent{ color:var(--danger); border-color:var(--danger); }
+.badge.onetime{ color:var(--ink); opacity:0.55; }
 
 .paid-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; }
 .paid-check input{ width:16px; height:16px; }
@@ -208,6 +214,7 @@ main{
   background:var(--paper); border:none; padding:4px 10px; font-size:12px; color:var(--ink); cursor:pointer;
 }
 .segmented button.active{ background:var(--ink); color:var(--paper); }
+.segmented button:not(.active):active{ background:rgba(70,110,200,0.2); }
 
 /* ---------- forms ---------- */
 .add-btn{
@@ -215,6 +222,7 @@ main{
   border-bottom:1px solid var(--ink); padding:6px 0 8px 0; margin-top:6px;
   font-size:14px; color:var(--ink); font-weight:bold; cursor:pointer;
 }
+.add-btn:active{ background:rgba(70,110,200,0.12); }
 .form{ padding:10px 0 14px 0; }
 .form-row{ margin-bottom:10px; }
 .form-row label{ display:block; font-size:11.5px; letter-spacing:1px; opacity:0.65; margin-bottom:3px; }
@@ -228,8 +236,11 @@ main{
   padding:10px 16px; border:1.5px solid var(--ink); background:var(--ink); color:var(--paper);
   font-size:14px; font-weight:bold; cursor:pointer; min-height:40px;
 }
+.btn:active{ background:var(--rule-solid); border-color:var(--rule-solid); }
 .btn.secondary{ background:var(--paper); color:var(--ink); }
+.btn.secondary:active{ background:rgba(70,110,200,0.15); }
 .btn.danger{ border-color:var(--danger); color:var(--danger); background:var(--paper); }
+.btn.danger:active{ background:rgba(211,75,75,0.15); }
 
 .debt-row{ padding:10px 0 12px 0; border-bottom:1px dashed rgba(26,26,46,0.25); }
 .debt-top{ display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
@@ -238,6 +249,7 @@ main{
   background:none; border:1px solid var(--ink); width:26px; height:22px; line-height:20px;
   padding:0; font-size:13px; color:var(--ink); cursor:pointer;
 }
+.debt-rank button:active{ background:var(--ink); color:var(--paper); }
 .debt-name{ font-weight:bold; flex:1; }
 .debt-signals{ font-size:12.5px; line-height:18px; margin-top:4px; opacity:0.85; }
 .debt-signals.urgent{ color:var(--danger); font-weight:bold; opacity:1; }
@@ -258,6 +270,7 @@ nav#tabbar .tab{
   flex:1; background:none; border:none; padding:12px 4px 10px 4px;
   font-size:12px; letter-spacing:0.5px; color:var(--ink); opacity:0.55; cursor:pointer;
 }
+nav#tabbar .tab:active{ background:rgba(70,110,200,0.15); }
 nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--rule-solid); margin-top:-2px; }
 
 @media (min-width:521px){
@@ -622,14 +635,16 @@ function renderBills(){
     list.innerHTML = sorted.map(function(b){
       var d = daysUntil(b.dueDate);
       var dueSoon = !b.paid && d <= 5;
+      var overdue = !b.paid && d < 0;
       var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
+      var onceBadge = b.recurring === false ? '<span class="badge onetime">ONE-TIME</span>' : '';
       var flag = billFloorFlag(b);
-      return '<div class="item" data-id="'+b.id+'">' +
+      return '<div class="item' + (overdue ? ' overdue' : '') + '" data-id="'+b.id+'">' +
         '<div class="item-top">' +
           '<span class="item-name">' + escapeHtml(b.name) + (b.paid ? ' <span class="muted">(paid)</span>' : '') + '</span>' +
           '<span class="item-amt">' + fmt(billAmount(b)) + '</span>' +
         '</div>' +
-        '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + '</div>' +
+        '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + ' ' + onceBadge + '</div>' +
         (flag ? '<div class="item-flag">' + flag + '</div>' : '') +
         '<div class="item-actions">' +
           '<span class="segmented" data-id="'+b.id+'">' +
@@ -787,6 +802,7 @@ document.getElementById('modalOverlay').addEventListener('click', function(e){
 
 function billFormHtml(b){
   b = b || {};
+  var recurring = b.recurring !== false;
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-bill-name" value="'+escapeHtml(b.name||'')+'" placeholder="e.g. Mortgage"></div>' +
     '<div class="form-row"><label>FULL AMOUNT</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>' +
@@ -794,6 +810,9 @@ function billFormHtml(b){
     '<div class="form-row"><label>DUE DATE</label><input type="date" id="f-bill-due" value="'+(b.dueDate||'')+'"></div>' +
     '<div class="form-row"><label>PAY MODE</label>' +
       '<select id="f-bill-mode"><option value="full" '+(b.payMode!=='min'?'selected':'')+'>Full</option><option value="min" '+(b.payMode==='min'?'selected':'')+'>Minimum</option></select>' +
+    '</div>' +
+    '<div class="form-row"><label>REPEATS</label>' +
+      '<select id="f-bill-recurring"><option value="yes" '+(recurring?'selected':'')+'>Recurring — rolls to next month when paid</option><option value="no" '+(!recurring?'selected':'')+'>One-time — doesn’t roll over</option></select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-paid" '+(b.paid?'checked':'')+' style="width:auto;"> Paid</label></div>' +
     '<div class="form-actions">' +
@@ -812,12 +831,13 @@ function openBillForm(existing){
     var min = num(document.getElementById('f-bill-min').value);
     var due = document.getElementById('f-bill-due').value;
     var mode = document.getElementById('f-bill-mode').value;
+    var recurring = document.getElementById('f-bill-recurring').value === 'yes';
     var paid = document.getElementById('f-bill-paid').checked;
     if(existing){
       existing.name=name; existing.amountFull=full; existing.amountMin=min;
-      existing.dueDate=due; existing.payMode=mode; existing.paid=paid;
+      existing.dueDate=due; existing.payMode=mode; existing.recurring=recurring; existing.paid=paid;
     } else {
-      DATA.bills.push({ id:uid(), name:name, amountFull:full, amountMin:min, dueDate:due, payMode:mode, paid:paid });
+      DATA.bills.push({ id:uid(), name:name, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid });
     }
     closeForm('billForm');
     save();
@@ -1038,9 +1058,9 @@ document.getElementById('importFile').addEventListener('change', function(e){
 });
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Reset month: paid bills roll their due date forward one month and unmark as paid. Unpaid bills are left as-is.')) return;
+  if(!confirm('Start next month: paid recurring bills roll their due date forward one month and unmark as paid. One-time bills and anything still unpaid are left exactly as-is.')) return;
   DATA.bills.forEach(function(b){
-    if(b.paid){
+    if(b.paid && b.recurring !== false){
       b.dueDate = addOneMonth(b.dueDate);
       b.paid = false;
     }
