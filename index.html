@@ -46,19 +46,50 @@ header{
   background:var(--paper);
   position:sticky; top:0; z-index:5;
 }
+.header-row{ display:flex; align-items:center; gap:12px; position:relative; }
+.menu-btn{
+  flex-shrink:0;
+  width:36px; height:32px; padding:0;
+  background:none; border:1.5px solid var(--ink); border-radius:6px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  cursor:pointer;
+}
+.menu-btn span{ display:block; width:18px; height:2px; background:var(--ink); }
 header h1{
   color:var(--danger);
   font-size:22px;
   letter-spacing:2px;
   line-height:28px;
+  margin:0;
 }
-.global-actions{ display:flex; gap:14px; margin-top:8px; }
-.global-actions button{
-  background:none; border:none; padding:6px 0; margin:0;
-  color:var(--ink); text-decoration:underline; text-underline-offset:3px;
-  font-size:13px; cursor:pointer;
+.menu-dropdown{
+  display:none;
+  flex-direction:column;
+  position:absolute;
+  top:38px; left:0;
+  width:150px;
+  background:var(--paper);
+  border:1.5px solid var(--ink);
+  z-index:10;
 }
-.global-actions button:active{ color:var(--rule-solid); }
+.menu-dropdown.open{ display:flex; }
+.menu-dropdown button{
+  background:none; border:none; text-align:left;
+  padding:10px 14px; margin:0;
+  color:var(--ink); font-size:14px; cursor:pointer;
+  border-bottom:1px solid rgba(26,26,46,0.15);
+}
+.menu-dropdown button:last-child{ border-bottom:none; }
+.menu-dropdown button:active{ background:rgba(70,110,200,0.12); }
+
+.reset-pill{
+  display:block; width:100%; margin-top:12px;
+  background:var(--ink); color:var(--paper); border:none;
+  border-radius:999px; padding:12px 0;
+  font-size:14px; font-weight:bold; letter-spacing:1px;
+  text-align:center; cursor:pointer;
+}
+.reset-pill:active{ background:var(--rule-solid); }
 
 /* ---------- ruled paper content area ---------- */
 main{
@@ -212,12 +243,17 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
 <div id="app">
 
   <header>
-    <h1>LET THE KING SEE</h1>
-    <div class="global-actions">
-      <button id="btnExport" type="button">Export</button>
-      <button id="btnImport" type="button">Import</button>
-      <button id="btnReset" type="button">Reset month</button>
+    <div class="header-row">
+      <button id="menuBtn" class="menu-btn" type="button" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <h1>LET THE KING SEE</h1>
+      <div id="menuDropdown" class="menu-dropdown">
+        <button id="btnExport" type="button">Export</button>
+        <button id="btnImport" type="button">Import</button>
+      </div>
     </div>
+    <button id="btnReset" class="reset-pill" type="button">Start next month</button>
   </header>
 
   <main>
@@ -889,6 +925,19 @@ document.body.addEventListener('change', function(e){
   }
 });
 
+/* ============ MENU ============ */
+var menuBtn = document.getElementById('menuBtn');
+var menuDropdown = document.getElementById('menuDropdown');
+menuBtn.addEventListener('click', function(e){
+  e.stopPropagation();
+  menuDropdown.classList.toggle('open');
+});
+document.body.addEventListener('click', function(e){
+  if(menuDropdown.classList.contains('open') && !menuDropdown.contains(e.target) && e.target !== menuBtn){
+    menuDropdown.classList.remove('open');
+  }
+});
+
 /* ============ EXPORT / IMPORT / RESET ============ */
 document.getElementById('btnExport').addEventListener('click', function(){
   var blob = new Blob([JSON.stringify(DATA, null, 2)], { type:'application/json' });
@@ -898,10 +947,12 @@ document.getElementById('btnExport').addEventListener('click', function(){
   a.href = url; a.download = 'runway-backup-' + stamp + '.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  menuDropdown.classList.remove('open');
 });
 
 document.getElementById('btnImport').addEventListener('click', function(){
   document.getElementById('importFile').click();
+  menuDropdown.classList.remove('open');
 });
 document.getElementById('importFile').addEventListener('change', function(e){
   var file = e.target.files[0];
