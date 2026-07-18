@@ -87,7 +87,7 @@ header h1{
 .reset-bar{
   display:block; width:100%;
   position:fixed; left:0; right:0;
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  bottom: var(--tabbar-h);
   max-width:520px; margin:0 auto;
   background:var(--ink); color:var(--paper); border:none;
   border-top:2px solid var(--ink);
@@ -1244,6 +1244,14 @@ if('serviceWorker' in navigator){
 
 /* ============ INIT ============ */
 renderAll();
+
+function syncTabbarHeight(){
+  var tb = document.getElementById('tabbar');
+  document.documentElement.style.setProperty('--tabbar-h', tb.offsetHeight + 'px');
+}
+syncTabbarHeight();
+window.addEventListener('resize', syncTabbarHeight);
+window.addEventListener('orientationchange', syncTabbarHeight);
 
 })();
 </script>
