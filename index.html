@@ -209,6 +209,7 @@ main{
 .badge.confirmed{ color:var(--ink); }
 .badge.likely{ color:var(--rule-solid); border-color:var(--rule-solid); }
 .badge.hopeful{ color:var(--ink); opacity:0.45; }
+.badge.received{ color:var(--paper); background:var(--ink); border-color:var(--ink); }
 .badge.due-soon{ color:var(--danger); border-color:var(--danger); }
 .badge.urgent{ color:var(--danger); border-color:var(--danger); }
 .badge.onetime{ color:var(--ink); opacity:0.55; }
@@ -754,12 +755,14 @@ function renderIncome(){
     ilist.innerHTML = '<div class="hint">No income entries yet.</div>';
   } else {
     ilist.innerHTML = isorted.map(function(i){
+      var badgeClass = i.received ? 'received' : i.confidence;
+      var badgeText = i.received ? 'RECEIVED' : i.confidence.toUpperCase();
       return '<div class="item" data-id="'+i.id+'">' +
         '<div class="item-top">' +
-          '<span class="item-name">' + escapeHtml(i.name) + (i.received ? ' <span class="muted">(received)</span>' : '') + '</span>' +
+          '<span class="item-name">' + escapeHtml(i.name) + '</span>' +
           '<span class="item-amt">' + fmt(i.amount) + '</span>' +
         '</div>' +
-        '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + i.confidence + '">' + i.confidence.toUpperCase() + '</span></div>' +
+        '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
         '<div class="item-actions">' +
           '<label class="paid-check"><input type="checkbox" data-act="received" data-id="'+i.id+'" ' + (i.received?'checked':'') + '> received</label>' +
           '<button data-act="edit-income" data-id="'+i.id+'" type="button">edit</button>' +
