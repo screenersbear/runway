@@ -760,6 +760,7 @@ function renderIncome(){
         '</div>' +
         '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + i.confidence + '">' + i.confidence.toUpperCase() + '</span></div>' +
         '<div class="item-actions">' +
+          '<label class="paid-check"><input type="checkbox" data-act="received" data-id="'+i.id+'" ' + (i.received?'checked':'') + '> received</label>' +
           '<button data-act="edit-income" data-id="'+i.id+'" type="button">edit</button>' +
           '<button data-act="del-income" data-id="'+i.id+'" type="button">delete</button>' +
         '</div>' +
@@ -1164,6 +1165,10 @@ document.body.addEventListener('change', function(e){
   if(e.target.dataset && e.target.dataset.act === 'paid'){
     var bill = DATA.bills.find(function(b){return b.id===e.target.dataset.id;});
     if(bill){ bill.paid = e.target.checked; save(); }
+  }
+  if(e.target.dataset && e.target.dataset.act === 'received'){
+    var income = DATA.income.find(function(i){return i.id===e.target.dataset.id;});
+    if(income){ income.received = e.target.checked; save(); }
   }
 });
 
