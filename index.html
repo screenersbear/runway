@@ -124,7 +124,7 @@ main{
 .line2{ line-height: calc(var(--row) * 2); }
 
 .label{ font-size:12px; letter-spacing:1.5px; color:var(--ink); opacity:0.6; line-height:var(--row); }
-.value{ font-size:30px; line-height: calc(var(--row) * 2); font-weight:bold; }
+.value{ font-size:38px; line-height: calc(var(--row) * 2); font-weight:bold; }
 .value.small{ font-size:20px; line-height:var(--row); }
 
 .section-title{
@@ -250,6 +250,13 @@ main{
 .btn.danger:active{ background:rgba(211,75,75,0.15); }
 
 .debt-row{ padding:10px 0 12px 0; border-bottom:1px dashed rgba(26,26,46,0.25); }
+.debt-buckets{ margin-top:2px; }
+.promo-row{ padding-bottom:10px; margin-bottom:10px; border-bottom:1px dashed rgba(26,26,46,0.25); }
+.promo-row:last-child{ border-bottom:none; margin-bottom:0; }
+.remove-row-btn{
+  background:none; border:none; padding:2px 0; color:var(--danger); text-decoration:underline;
+  text-underline-offset:3px; font-size:12px; cursor:pointer;
+}
 .debt-top{ display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
 .debt-rank{ display:flex; flex-direction:column; gap:0; }
 .debt-rank button{
@@ -438,6 +445,23 @@ function defaultData(){
   return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30 };
 }
 
+function normalizeDebt(d){
+  if(d.promos && Array.isArray(d.promos)){
+    if(!d.promos.length) d.promos.push({ id:uid(), balance:0, apr:null, promoType:'none', promoDeadline:null, revertApr:null });
+    return d;
+  }
+  d.promos = [{
+    id: uid(),
+    balance: d.balance != null ? d.balance : 0,
+    apr: d.apr != null ? d.apr : null,
+    promoType: d.promoType || 'none',
+    promoDeadline: d.promoDeadline || null,
+    revertApr: d.revertApr != null ? d.revertApr : null
+  }];
+  delete d.balance; delete d.apr; delete d.promoType; delete d.promoDeadline; delete d.revertApr;
+  return d;
+}
+
 function loadData(){
   var raw = localStorage.getItem(STORAGE_KEY);
   if(!raw) return defaultData();
@@ -445,6 +469,7 @@ function loadData(){
     var d = JSON.parse(raw);
     var def = defaultData();
     for(var k in def){ if(d[k]===undefined) d[k]=def[k]; }
+    d.debts = (d.debts||[]).map(normalizeDebt);
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -514,6 +539,33 @@ function excludedAccounts(){ return DATA.accounts.filter(function(a){ return a.e
 
 function billAmount(b){ return b.payMode === 'min' ? num(b.amountMin) : num(b.amountFull); }
 
+function debtTotalBalance(d){
+  return (d.promos||[]).reduce(function(s,p){ return s + num(p.balance); }, 0);
+}
+function bucketCurrentApr(p){
+  if(p.promoType === 'zeroPct' || p.promoType === 'deferredInterest'){
+    var expired = p.promoDeadline && daysUntil(p.promoDeadline) < 0;
+    return expired ? num(p.revertApr) : 0;
+  }
+  return num(p.apr);
+}
+function debtEffectiveApr(d){
+  var total = debtTotalBalance(d);
+  if(total <= 0) return 0;
+  var weighted = (d.promos||[]).reduce(function(s,p){ return s + bucketCurrentApr(p) * num(p.balance); }, 0);
+  return weighted / total;
+}
+function debtMostUrgentDays(d){
+  var days = null;
+  (d.promos||[]).forEach(function(p){
+    if(p.promoType && p.promoType !== 'none' && p.promoDeadline){
+      var dd = daysUntil(p.promoDeadline);
+      if(dd <= 90 && (days === null || dd < days)) days = dd;
+    }
+  });
+  return days;
+}
+
 function billsInWindow(days){
   return DATA.bills.filter(function(b){
     if(b.paid) return false;
@@ -537,6 +589,7 @@ function billsPaidSum(days){
 
 function incomeInWindow(days, confidences){
   return DATA.income.filter(function(i){
+    if(i.received) return false;
     return confidences.indexOf(i.confidence) !== -1 && daysUntil(i.expectedDate) <= days;
   });
 }
@@ -554,7 +607,7 @@ function likelyLeftover(){
   return confirmedLeftover() + incomeSum(windowDays(), ['likely']);
 }
 function totalExpectedIncome(){
-  return DATA.income.reduce(function(s,i){ return s + num(i.amount); }, 0);
+  return DATA.income.filter(function(i){ return !i.received; }).reduce(function(s,i){ return s + num(i.amount); }, 0);
 }
 
 function verdictInfo(){
@@ -669,13 +722,14 @@ function renderBills(){
       var overdue = !b.paid && d < 0;
       var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
       var onceBadge = b.recurring === false ? '<span class="badge onetime">ONE-TIME</span>' : '';
+      var debtBadge = b.linkedDebtId ? '<span class="badge onetime">&#8594; TRACKED AS DEBT</span>' : '';
       var flag = billFloorFlag(b);
       return '<div class="item' + (overdue ? ' overdue' : '') + '" data-id="'+b.id+'">' +
         '<div class="item-top">' +
           '<span class="item-name">' + escapeHtml(b.name) + (b.paid ? ' <span class="muted">(paid)</span>' : '') + '</span>' +
           '<span class="item-amt">' + fmt(billAmount(b)) + '</span>' +
         '</div>' +
-        '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + ' ' + onceBadge + '</div>' +
+        '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + ' ' + onceBadge + ' ' + debtBadge + '</div>' +
         (flag ? '<div class="item-flag">' + flag + '</div>' : '') +
         '<div class="item-actions">' +
           '<span class="segmented" data-id="'+b.id+'">' +
@@ -701,7 +755,7 @@ function renderIncome(){
     ilist.innerHTML = isorted.map(function(i){
       return '<div class="item" data-id="'+i.id+'">' +
         '<div class="item-top">' +
-          '<span class="item-name">' + escapeHtml(i.name) + '</span>' +
+          '<span class="item-name">' + escapeHtml(i.name) + (i.received ? ' <span class="muted">(received)</span>' : '') + '</span>' +
           '<span class="item-amt">' + fmt(i.amount) + '</span>' +
         '</div>' +
         '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + i.confidence + '">' + i.confidence.toUpperCase() + '</span></div>' +
@@ -725,19 +779,21 @@ function renderPriority(){
     return;
   }
   list.innerHTML = sorted.map(function(d, idx){
-    var aprText = (d.apr === null || d.apr === undefined || d.apr === '') ? 'APR unknown — add it' : (num(d.apr).toFixed(2) + '% APR');
-    var promoText = '';
-    if(d.promoType && d.promoType !== 'none'){
-      var label = d.promoType === 'zeroPct' ? '0%' : 'deferred interest';
-      var dl = d.promoDeadline;
-      var dDays = dl ? daysUntil(dl) : null;
-      var urgent = dDays !== null && dDays <= 90;
-      var revertTxt = d.promoType === 'zeroPct'
-        ? (d.revertApr !== null && d.revertApr !== undefined && d.revertApr !== '' ? ' — reverts to ' + num(d.revertApr).toFixed(2) + '% on ' + fmtDate(dl) : ' — reverts on ' + fmtDate(dl))
-        : (' — $' + num(d.balance).toFixed(2) + ' detonates on ' + fmtDate(dl));
-      promoText = '<div class="debt-signals' + (urgent?' urgent':'') + '">' + label + revertTxt +
-        (urgent ? ' &middot; <strong>' + (dDays<0? 'OVERDUE':(dDays+'d left')) + '</strong>' : '') + '</div>';
-    }
+    var buckets = (d.promos||[]).map(function(p){
+      if(p.promoType && p.promoType !== 'none'){
+        var label = p.promoType === 'zeroPct' ? '0%' : 'deferred interest';
+        var dl = p.promoDeadline;
+        var dDays = dl ? daysUntil(dl) : null;
+        var urgent = dDays !== null && dDays <= 90;
+        var revertTxt = p.promoType === 'zeroPct'
+          ? (p.revertApr !== null && p.revertApr !== undefined && p.revertApr !== '' ? ' — reverts to ' + num(p.revertApr).toFixed(2) + '% on ' + (dl?fmtDate(dl):'?') : (dl ? ' — reverts on ' + fmtDate(dl) : ''))
+          : (' — $' + num(p.balance).toFixed(2) + ' detonates on ' + (dl?fmtDate(dl):'?'));
+        return '<div class="debt-signals' + (urgent?' urgent':'') + '">' + fmt(p.balance) + ' — ' + label + revertTxt +
+          (urgent ? ' &middot; <strong>' + (dDays<0? 'OVERDUE':(dDays+'d left')) + '</strong>' : '') + '</div>';
+      }
+      var aprText = (p.apr === null || p.apr === undefined || p.apr === '') ? 'APR unknown — add it' : (num(p.apr).toFixed(2) + '% APR');
+      return '<div class="debt-signals">' + fmt(p.balance) + ' — ' + aprText + '</div>';
+    }).join('');
     return '<div class="debt-row" data-id="'+d.id+'">' +
       '<div class="debt-top">' +
         '<div class="debt-rank">' +
@@ -745,10 +801,9 @@ function renderPriority(){
           '<button data-act="rank-down" data-id="'+d.id+'" type="button" ' + (idx===sorted.length-1?'disabled':'') + '>▼</button>' +
         '</div>' +
         '<span class="debt-name">#' + (idx+1) + ' ' + escapeHtml(d.name) + '</span>' +
-        '<span class="item-amt">' + fmt(d.balance) + '</span>' +
+        '<span class="item-amt">' + fmt(debtTotalBalance(d)) + '</span>' +
       '</div>' +
-      '<div class="debt-signals">' + aprText + '</div>' +
-      promoText +
+      '<div class="debt-buckets">' + buckets + '</div>' +
       '<div class="item-actions">' +
         '<button data-act="edit-debt" data-id="'+d.id+'" type="button">edit</button>' +
         '<button data-act="del-debt" data-id="'+d.id+'" type="button">delete</button>' +
@@ -791,6 +846,21 @@ document.querySelectorAll('#tabbar .tab').forEach(function(btn){
 /* ============ FORM BUILDERS ============ */
 function closeForm(containerId){ document.getElementById(containerId).innerHTML = ''; }
 
+function bindEnterToSave(containerEl, saveBtnId, reopenFn, existing){
+  if(containerEl._enterHandler){
+    containerEl.removeEventListener('keydown', containerEl._enterHandler);
+  }
+  var handler = function(e){
+    if(e.key !== 'Enter') return;
+    if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') return;
+    e.preventDefault();
+    document.getElementById(saveBtnId).click();
+    if(!existing && reopenFn) reopenFn();
+  };
+  containerEl._enterHandler = handler;
+  containerEl.addEventListener('keydown', handler);
+}
+
 function accountFormHtml(a){
   a = a || {};
   return '<div class="form">' +
@@ -831,6 +901,7 @@ function openAccountForm(existing){
   document.getElementById('f-acct-cancel').addEventListener('click', function(){
     if(isModal){ closeAccountModal(); } else { closeForm('rw-accountForm'); }
   });
+  bindEnterToSave(container, 'f-acct-save', function(){ openAccountForm(null); }, existing);
 }
 
 document.getElementById('modalOverlay').addEventListener('click', function(e){
@@ -852,6 +923,7 @@ function billFormHtml(b){
       '<select id="f-bill-recurring"><option value="yes" '+(recurring?'selected':'')+'>Recurring — rolls to next month when paid</option><option value="no" '+(!recurring?'selected':'')+'>One-time — doesn’t roll over</option></select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-paid" '+(b.paid?'checked':'')+' style="width:auto;"> Paid</label></div>' +
+    '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(b.linkedDebtId?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' +
     '<div class="form-actions">' +
       '<button class="btn" id="f-bill-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-bill-cancel" type="button">Cancel</button>' +
@@ -860,7 +932,8 @@ function billFormHtml(b){
 }
 
 function openBillForm(existing){
-  document.getElementById('billForm').innerHTML = billFormHtml(existing);
+  var formEl = document.getElementById('billForm');
+  formEl.innerHTML = billFormHtml(existing);
   document.getElementById('f-bill-save').addEventListener('click', function(){
     var name = document.getElementById('f-bill-name').value.trim();
     if(!name) return;
@@ -870,16 +943,30 @@ function openBillForm(existing){
     var mode = document.getElementById('f-bill-mode').value;
     var recurring = document.getElementById('f-bill-recurring').value === 'yes';
     var paid = document.getElementById('f-bill-paid').checked;
+    var asDebt = document.getElementById('f-bill-asdebt').checked;
+    var bill;
     if(existing){
       existing.name=name; existing.amountFull=full; existing.amountMin=min;
       existing.dueDate=due; existing.payMode=mode; existing.recurring=recurring; existing.paid=paid;
+      bill = existing;
     } else {
-      DATA.bills.push({ id:uid(), name:name, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid });
+      bill = { id:uid(), name:name, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
+      DATA.bills.push(bill);
+    }
+    if(asDebt && !bill.linkedDebtId){
+      var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
+      var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id,
+        promos:[{ id:uid(), balance:full, apr:null, promoType:'none', promoDeadline:null, revertApr:null }] };
+      DATA.debts.push(newDebt);
+      bill.linkedDebtId = newDebt.id;
+    } else if(!asDebt && bill.linkedDebtId){
+      bill.linkedDebtId = null;
     }
     closeForm('billForm');
     save();
   });
   document.getElementById('f-bill-cancel').addEventListener('click', function(){ closeForm('billForm'); });
+  bindEnterToSave(formEl, 'f-bill-save', function(){ openBillForm(null); }, existing);
 }
 
 function incomeFormHtml(i){
@@ -896,6 +983,7 @@ function incomeFormHtml(i){
         '<option value="hopeful" '+(conf==='hopeful'?'selected':'')+'>Hopeful</option>' +
       '</select>' +
     '</div>' +
+    '<div class="form-row"><label><input type="checkbox" id="f-inc-received" '+(i.received?'checked':'')+' style="width:auto;"> Received (already in my account balance)</label></div>' +
     '<div class="form-actions">' +
       '<button class="btn" id="f-inc-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-inc-cancel" type="button">Cancel</button>' +
@@ -904,41 +992,54 @@ function incomeFormHtml(i){
 }
 
 function openIncomeForm(existing){
-  document.getElementById('incomeForm').innerHTML = incomeFormHtml(existing);
+  var formEl = document.getElementById('incomeForm');
+  formEl.innerHTML = incomeFormHtml(existing);
   document.getElementById('f-inc-save').addEventListener('click', function(){
     var name = document.getElementById('f-inc-name').value.trim();
     if(!name) return;
     var amount = num(document.getElementById('f-inc-amount').value);
     var date = document.getElementById('f-inc-date').value;
     var conf = document.getElementById('f-inc-conf').value;
+    var received = document.getElementById('f-inc-received').checked;
     if(existing){
-      existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf;
+      existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf; existing.received=received;
     } else {
-      DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf });
+      DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, received:received });
     }
     closeForm('incomeForm');
     save();
   });
   document.getElementById('f-inc-cancel').addEventListener('click', function(){ closeForm('incomeForm'); });
+  bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
 }
 
-function debtFormHtml(d){
-  d = d || {};
-  var promo = d.promoType || 'none';
-  return '<div class="form">' +
-    '<div class="form-row"><label>NAME</label><input type="text" id="f-debt-name" value="'+escapeHtml(d.name||'')+'" placeholder="e.g. Store card"></div>' +
-    '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" id="f-debt-balance" value="'+(d.balance!=null?d.balance:'')+'" placeholder="0.00"></div>' +
-    '<div class="form-row"><label>APR (leave blank if unknown)</label><input type="number" step="0.01" id="f-debt-apr" value="'+(d.apr!=null?d.apr:'')+'" placeholder="e.g. 24.99"></div>' +
+function debtPromoRowHtml(p){
+  p = p || {};
+  var promo = p.promoType || 'none';
+  return '<div class="promo-row">' +
+    '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" class="f-debt-bal" value="'+(p.balance!=null?p.balance:'')+'" placeholder="0.00"></div>' +
+    '<div class="form-row"><label>APR (used if no promo &mdash; leave blank if unknown)</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
     '<div class="form-row"><label>PROMO TYPE</label>' +
-      '<select id="f-debt-promo">' +
+      '<select class="f-debt-promo">' +
         '<option value="none" '+(promo==='none'?'selected':'')+'>None</option>' +
         '<option value="zeroPct" '+(promo==='zeroPct'?'selected':'')+'>0% intro</option>' +
         '<option value="deferredInterest" '+(promo==='deferredInterest'?'selected':'')+'>Deferred interest</option>' +
       '</select>' +
     '</div>' +
-    '<div class="form-row"><label>PROMO DEADLINE</label><input type="date" id="f-debt-deadline" value="'+(d.promoDeadline||'')+'"></div>' +
-    '<div class="form-row"><label>REVERT APR (after promo ends)</label><input type="number" step="0.01" id="f-debt-revert" value="'+(d.revertApr!=null?d.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
-    '<div class="form-actions">' +
+    '<div class="form-row"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
+    '<div class="form-row"><label>REVERT APR (after promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
+    '<button type="button" class="remove-row-btn">Remove this balance / promo</button>' +
+  '</div>';
+}
+
+function debtFormHtml(d){
+  d = d || {};
+  var promos = (d.promos && d.promos.length) ? d.promos : [{}];
+  return '<div class="form">' +
+    '<div class="form-row"><label>NAME</label><input type="text" id="f-debt-name" value="'+escapeHtml(d.name||'')+'" placeholder="e.g. Store card"></div>' +
+    '<div id="promoRows">' + promos.map(debtPromoRowHtml).join('') + '</div>' +
+    '<button type="button" class="add-btn" id="addPromoRowBtn">+ Add another balance / promo</button>' +
+    '<div class="form-actions" style="margin-top:14px;">' +
       '<button class="btn" id="f-debt-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-debt-cancel" type="button">Cancel</button>' +
     '</div>' +
@@ -946,29 +1047,40 @@ function debtFormHtml(d){
 }
 
 function openDebtForm(existing){
-  document.getElementById('debtForm').innerHTML = debtFormHtml(existing);
+  var formEl = document.getElementById('debtForm');
+  formEl.innerHTML = debtFormHtml(existing);
+
+  document.getElementById('addPromoRowBtn').addEventListener('click', function(){
+    var wrap = document.createElement('div');
+    wrap.innerHTML = debtPromoRowHtml({});
+    document.getElementById('promoRows').appendChild(wrap.firstChild);
+  });
+
   document.getElementById('f-debt-save').addEventListener('click', function(){
     var name = document.getElementById('f-debt-name').value.trim();
     if(!name) return;
-    var balance = num(document.getElementById('f-debt-balance').value);
-    var aprRaw = document.getElementById('f-debt-apr').value;
-    var apr = aprRaw === '' ? null : num(aprRaw);
-    var promo = document.getElementById('f-debt-promo').value;
-    var deadline = document.getElementById('f-debt-deadline').value || null;
-    var revertRaw = document.getElementById('f-debt-revert').value;
-    var revert = revertRaw === '' ? null : num(revertRaw);
+    var rows = document.querySelectorAll('#promoRows .promo-row');
+    var promos = Array.prototype.map.call(rows, function(row){
+      var balance = num(row.querySelector('.f-debt-bal').value);
+      var aprRaw = row.querySelector('.f-debt-apr').value;
+      var apr = aprRaw === '' ? null : num(aprRaw);
+      var promoType = row.querySelector('.f-debt-promo').value;
+      var deadline = row.querySelector('.f-debt-deadline').value || null;
+      var revertRaw = row.querySelector('.f-debt-revert').value;
+      var revert = revertRaw === '' ? null : num(revertRaw);
+      return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+    });
     if(existing){
-      existing.name=name; existing.balance=balance; existing.apr=apr; existing.promoType=promo;
-      existing.promoDeadline=deadline; existing.revertApr=revert;
+      existing.name = name; existing.promos = promos;
     } else {
       var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
-      DATA.debts.push({ id:uid(), name:name, balance:balance, apr:apr, promoType:promo,
-        promoDeadline:deadline, revertApr:revert, priorityRank:maxRank+1 });
+      DATA.debts.push({ id:uid(), name:name, promos:promos, priorityRank:maxRank+1 });
     }
     closeForm('debtForm');
     save();
   });
   document.getElementById('f-debt-cancel').addEventListener('click', function(){ closeForm('debtForm'); });
+  bindEnterToSave(formEl, 'f-debt-save', function(){ openDebtForm(null); }, existing);
 }
 
 /* ============ EVENT DELEGATION ============ */
@@ -990,14 +1102,12 @@ document.getElementById('floor-input').addEventListener('change', function(e){
 document.getElementById('suggestOrderBtn').addEventListener('click', function(){
   var debts = DATA.debts.slice();
   debts.sort(function(a,b){
-    var aDl = a.promoDeadline ? daysUntil(a.promoDeadline) : null;
-    var bDl = b.promoDeadline ? daysUntil(b.promoDeadline) : null;
-    var aUrgent = a.promoType && a.promoType!=='none' && aDl !== null && aDl <= 90;
-    var bUrgent = b.promoType && b.promoType!=='none' && bDl !== null && bDl <= 90;
-    if(aUrgent && bUrgent) return aDl - bDl;
-    if(aUrgent) return -1;
-    if(bUrgent) return 1;
-    return num(b.apr) - num(a.apr);
+    var aDays = debtMostUrgentDays(a);
+    var bDays = debtMostUrgentDays(b);
+    if(aDays !== null && bDays !== null) return aDays - bDays;
+    if(aDays !== null) return -1;
+    if(bDays !== null) return 1;
+    return debtEffectiveApr(b) - debtEffectiveApr(a);
   });
   debts.forEach(function(d, i){ d.priorityRank = i+1; });
   DATA.debts = debts;
@@ -1005,6 +1115,13 @@ document.getElementById('suggestOrderBtn').addEventListener('click', function(){
 });
 
 document.body.addEventListener('click', function(e){
+  var removeRowBtn = e.target.closest('.remove-row-btn');
+  if(removeRowBtn){
+    var rows = document.querySelectorAll('#promoRows .promo-row');
+    if(rows.length > 1) removeRowBtn.closest('.promo-row').remove();
+    return;
+  }
+
   var btn = e.target.closest('button[data-act]');
   if(!btn) return;
   var act = btn.dataset.act, id = btn.dataset.id;
@@ -1023,7 +1140,13 @@ document.body.addEventListener('click', function(e){
   else if(act === 'del-income'){ if(confirm('Delete this income entry?')){ DATA.income = DATA.income.filter(function(i){return i.id!==id;}); save(); } }
 
   else if(act === 'edit-debt'){ openDebtForm(DATA.debts.find(function(d){return d.id===id;})); }
-  else if(act === 'del-debt'){ if(confirm('Delete this debt?')){ DATA.debts = DATA.debts.filter(function(d){return d.id!==id;}); save(); } }
+  else if(act === 'del-debt'){
+    if(confirm('Delete this debt?')){
+      DATA.debts = DATA.debts.filter(function(d){return d.id!==id;});
+      DATA.bills.forEach(function(b){ if(b.linkedDebtId === id) b.linkedDebtId = null; });
+      save();
+    }
+  }
   else if(act === 'rank-up' || act === 'rank-down'){
     var sorted = DATA.debts.slice().sort(function(a,b){ return num(a.priorityRank)-num(b.priorityRank); });
     var idx = sorted.findIndex(function(d){return d.id===id;});
@@ -1082,6 +1205,7 @@ document.getElementById('importFile').addEventListener('change', function(e){
       var parsed = JSON.parse(reader.result);
       var def = defaultData();
       for(var k in def){ if(parsed[k]===undefined) parsed[k]=def[k]; }
+      parsed.debts = (parsed.debts||[]).map(normalizeDebt);
       DATA = parsed;
       persist();
       renderAll();
