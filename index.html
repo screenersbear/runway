@@ -127,6 +127,10 @@ main{
 .value{ font-size:38px; line-height: calc(var(--row) * 2); font-weight:bold; }
 .value.small{ font-size:20px; line-height:var(--row); }
 
+.collapse-toggle{ cursor:pointer; display:flex; align-items:baseline; gap:6px; }
+.collapse-toggle:active{ background:rgba(70,110,200,0.12); }
+.collapse-arrow{ margin-left:auto; font-size:12px; opacity:0.6; }
+.list.collapsed{ display:none; }
 .section-title{
   font-size:16px; letter-spacing:1.5px; font-weight:bold;
   line-height: var(--row);
@@ -259,6 +263,7 @@ main{
   background:none; border:none; padding:2px 0; color:var(--danger); text-decoration:underline;
   text-underline-offset:3px; font-size:12px; cursor:pointer;
 }
+.remove-row-btn:active{ background:rgba(211,75,75,0.15); }
 .debt-top{ display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
 .debt-rank{ display:flex; flex-direction:column; gap:0; }
 .debt-rank button{
@@ -285,8 +290,8 @@ nav#tabbar{
   box-sizing:border-box;
 }
 nav#tabbar .tab{
-  flex:1; background:none; border:none; padding:12px 4px 10px 4px;
-  font-size:12px; letter-spacing:0.5px; color:var(--ink); opacity:0.55; cursor:pointer;
+  flex:1; background:none; border:none; padding:18px 2px 16px 2px;
+  font-size:13.5px; letter-spacing:0.3px; color:var(--ink); opacity:0.55; cursor:pointer;
 }
 nav#tabbar .tab:active{ background:rgba(70,110,200,0.15); }
 nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--rule-solid); margin-top:-2px; }
@@ -377,10 +382,13 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN C: BILLS ================= -->
     <section id="screen-bills" class="screen">
 
-      <div class="section-title">BILLS</div>
-      <div id="bills-list" class="list"></div>
+      <div class="section-title collapse-toggle" data-target="bills-pending">PENDING <span class="muted" id="count-bills-pending"></span><span class="collapse-arrow" id="arrow-bills-pending">&#9662;</span></div>
+      <div id="bills-pending" class="list"></div>
       <button class="add-btn" id="addBillBtn" type="button">+ Add bill</button>
       <div id="billForm"></div>
+
+      <div class="section-title collapse-toggle" data-target="bills-paid" style="margin-top:22px;">PAID <span class="muted" id="count-bills-paid"></span><span class="collapse-arrow" id="arrow-bills-paid">&#9656;</span></div>
+      <div id="bills-paid" class="list collapsed"></div>
 
       <button id="btnReset" class="reset-bar" type="button">Start next month</button>
 
@@ -712,39 +720,48 @@ function renderFloor(){
 }
 
 /* ============ RENDER: BILLS & INCOME ============ */
+function billRowHtml(b){
+  var d = daysUntil(b.dueDate);
+  var dueSoon = !b.paid && d <= 5;
+  var overdue = !b.paid && d < 0;
+  var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
+  var onceBadge = b.recurring === false ? '<span class="badge onetime">ONE-TIME</span>' : '';
+  var debtBadge = b.linkedDebtId ? '<span class="badge onetime">&#8594; TRACKED AS DEBT</span>' : '';
+  var flag = billFloorFlag(b);
+  return '<div class="item' + (overdue ? ' overdue' : '') + '" data-id="'+b.id+'">' +
+    '<div class="item-top">' +
+      '<span class="item-name">' + escapeHtml(b.name) + '</span>' +
+      '<span class="item-amt">' + fmt(billAmount(b)) + '</span>' +
+    '</div>' +
+    '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + ' ' + onceBadge + ' ' + debtBadge + '</div>' +
+    (flag ? '<div class="item-flag">' + flag + '</div>' : '') +
+    '<div class="item-actions">' +
+      '<span class="segmented" data-id="'+b.id+'">' +
+        '<button data-act="paymode" data-mode="full" data-id="'+b.id+'" type="button" class="'+(b.payMode==='full'?'active':'')+'">full</button>' +
+        '<button data-act="paymode" data-mode="min" data-id="'+b.id+'" type="button" class="'+(b.payMode==='min'?'active':'')+'">min</button>' +
+      '</span>' +
+      '<label class="paid-check"><input type="checkbox" data-act="paid" data-id="'+b.id+'" ' + (b.paid?'checked':'') + '> paid</label>' +
+      '<button data-act="edit-bill" data-id="'+b.id+'" type="button">edit</button>' +
+      '<button data-act="del-bill" data-id="'+b.id+'" type="button">delete</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderBills(){
-  var list = document.getElementById('bills-list');
-  var sorted = DATA.bills.slice().sort(function(a,b){ return daysUntil(a.dueDate) - daysUntil(b.dueDate); });
-  if(!sorted.length){
-    list.innerHTML = '<div class="hint">No bills yet.</div>';
-  } else {
-    list.innerHTML = sorted.map(function(b){
-      var d = daysUntil(b.dueDate);
-      var dueSoon = !b.paid && d <= 5;
-      var overdue = !b.paid && d < 0;
-      var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
-      var onceBadge = b.recurring === false ? '<span class="badge onetime">ONE-TIME</span>' : '';
-      var debtBadge = b.linkedDebtId ? '<span class="badge onetime">&#8594; TRACKED AS DEBT</span>' : '';
-      var flag = billFloorFlag(b);
-      return '<div class="item' + (overdue ? ' overdue' : '') + '" data-id="'+b.id+'">' +
-        '<div class="item-top">' +
-          '<span class="item-name">' + escapeHtml(b.name) + (b.paid ? ' <span class="muted">(paid)</span>' : '') + '</span>' +
-          '<span class="item-amt">' + fmt(billAmount(b)) + '</span>' +
-        '</div>' +
-        '<div class="item-sub">Due ' + fmtDate(b.dueDate) + ' &middot; full ' + fmt(b.amountFull) + ' / min ' + fmt(b.amountMin) + ' ' + badge + ' ' + onceBadge + ' ' + debtBadge + '</div>' +
-        (flag ? '<div class="item-flag">' + flag + '</div>' : '') +
-        '<div class="item-actions">' +
-          '<span class="segmented" data-id="'+b.id+'">' +
-            '<button data-act="paymode" data-mode="full" data-id="'+b.id+'" type="button" class="'+(b.payMode==='full'?'active':'')+'">full</button>' +
-            '<button data-act="paymode" data-mode="min" data-id="'+b.id+'" type="button" class="'+(b.payMode==='min'?'active':'')+'">min</button>' +
-          '</span>' +
-          '<label class="paid-check"><input type="checkbox" data-act="paid" data-id="'+b.id+'" ' + (b.paid?'checked':'') + '> paid</label>' +
-          '<button data-act="edit-bill" data-id="'+b.id+'" type="button">edit</button>' +
-          '<button data-act="del-bill" data-id="'+b.id+'" type="button">delete</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-  }
+  var pending = DATA.bills.filter(function(b){ return !b.paid; })
+    .sort(function(a,b){ return daysUntil(a.dueDate) - daysUntil(b.dueDate); });
+  var paid = DATA.bills.filter(function(b){ return b.paid; })
+    .sort(function(a,b){ return daysUntil(a.dueDate) - daysUntil(b.dueDate); });
+
+  document.getElementById('bills-pending').innerHTML = pending.length
+    ? pending.map(billRowHtml).join('')
+    : '<div class="hint">No pending bills.</div>';
+  document.getElementById('bills-paid').innerHTML = paid.length
+    ? paid.map(billRowHtml).join('')
+    : '<div class="hint">No paid bills yet.</div>';
+
+  document.getElementById('count-bills-pending').textContent = '(' + pending.length + ')';
+  document.getElementById('count-bills-paid').textContent = '(' + paid.length + ')';
 }
 
 /* ============ RENDER: INCOME ============ */
@@ -825,6 +842,16 @@ function renderAll(){
   renderPriority();
 }
 
+/* ============ COLLAPSE TOGGLES ============ */
+document.querySelectorAll('.collapse-toggle').forEach(function(el){
+  el.addEventListener('click', function(){
+    var target = document.getElementById(el.dataset.target);
+    var arrow = document.getElementById('arrow-' + el.dataset.target);
+    var collapsed = target.classList.toggle('collapsed');
+    if(arrow) arrow.innerHTML = collapsed ? '&#9656;' : '&#9662;';
+  });
+});
+
 /* ============ INFO TOGGLES ============ */
 document.querySelectorAll('.info-toggle').forEach(function(el){
   el.addEventListener('click', function(){
@@ -879,7 +906,7 @@ function accountFormHtml(a){
   '</div>';
 }
 
-function closeAccountModal(){
+function closeModal(){
   document.getElementById('modalOverlay').classList.remove('open');
   document.getElementById('modalCard').innerHTML = '';
 }
@@ -900,17 +927,17 @@ function openAccountForm(existing){
     } else {
       DATA.accounts.push({ id: uid(), name:name, balance:balance, excluded:excluded });
     }
-    if(isModal){ closeAccountModal(); } else { closeForm('rw-accountForm'); }
+    if(isModal){ closeModal(); } else { closeForm('rw-accountForm'); }
     save();
   });
   document.getElementById('f-acct-cancel').addEventListener('click', function(){
-    if(isModal){ closeAccountModal(); } else { closeForm('rw-accountForm'); }
+    if(isModal){ closeModal(); } else { closeForm('rw-accountForm'); }
   });
   bindEnterToSave(container, 'f-acct-save', function(){ openAccountForm(null); }, existing);
 }
 
 document.getElementById('modalOverlay').addEventListener('click', function(e){
-  if(e.target === e.currentTarget) closeAccountModal();
+  if(e.target === e.currentTarget) closeModal();
 });
 
 function billFormHtml(b){
@@ -937,8 +964,11 @@ function billFormHtml(b){
 }
 
 function openBillForm(existing){
-  var formEl = document.getElementById('billForm');
+  var isModal = !!existing;
+  var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('billForm');
   formEl.innerHTML = billFormHtml(existing);
+  if(isModal) document.getElementById('modalOverlay').classList.add('open');
+
   document.getElementById('f-bill-save').addEventListener('click', function(){
     var name = document.getElementById('f-bill-name').value.trim();
     if(!name) return;
@@ -967,10 +997,12 @@ function openBillForm(existing){
     } else if(!asDebt && bill.linkedDebtId){
       bill.linkedDebtId = null;
     }
-    closeForm('billForm');
+    if(isModal){ closeModal(); } else { closeForm('billForm'); }
     save();
   });
-  document.getElementById('f-bill-cancel').addEventListener('click', function(){ closeForm('billForm'); });
+  document.getElementById('f-bill-cancel').addEventListener('click', function(){
+    if(isModal){ closeModal(); } else { closeForm('billForm'); }
+  });
   bindEnterToSave(formEl, 'f-bill-save', function(){ openBillForm(null); }, existing);
 }
 
@@ -997,8 +1029,11 @@ function incomeFormHtml(i){
 }
 
 function openIncomeForm(existing){
-  var formEl = document.getElementById('incomeForm');
+  var isModal = !!existing;
+  var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('incomeForm');
   formEl.innerHTML = incomeFormHtml(existing);
+  if(isModal) document.getElementById('modalOverlay').classList.add('open');
+
   document.getElementById('f-inc-save').addEventListener('click', function(){
     var name = document.getElementById('f-inc-name').value.trim();
     if(!name) return;
@@ -1011,10 +1046,12 @@ function openIncomeForm(existing){
     } else {
       DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, received:received });
     }
-    closeForm('incomeForm');
+    if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
     save();
   });
-  document.getElementById('f-inc-cancel').addEventListener('click', function(){ closeForm('incomeForm'); });
+  document.getElementById('f-inc-cancel').addEventListener('click', function(){
+    if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
+  });
   bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
 }
 
@@ -1052,8 +1089,10 @@ function debtFormHtml(d){
 }
 
 function openDebtForm(existing){
-  var formEl = document.getElementById('debtForm');
+  var isModal = !!existing;
+  var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('debtForm');
   formEl.innerHTML = debtFormHtml(existing);
+  if(isModal) document.getElementById('modalOverlay').classList.add('open');
 
   document.getElementById('addPromoRowBtn').addEventListener('click', function(){
     var wrap = document.createElement('div');
@@ -1081,10 +1120,12 @@ function openDebtForm(existing){
       var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
       DATA.debts.push({ id:uid(), name:name, promos:promos, priorityRank:maxRank+1 });
     }
-    closeForm('debtForm');
+    if(isModal){ closeModal(); } else { closeForm('debtForm'); }
     save();
   });
-  document.getElementById('f-debt-cancel').addEventListener('click', function(){ closeForm('debtForm'); });
+  document.getElementById('f-debt-cancel').addEventListener('click', function(){
+    if(isModal){ closeModal(); } else { closeForm('debtForm'); }
+  });
   bindEnterToSave(formEl, 'f-debt-save', function(){ openDebtForm(null); }, existing);
 }
 
