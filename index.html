@@ -124,7 +124,7 @@ main{
 .line2{ line-height: calc(var(--row) * 2); }
 
 .label{ font-size:12px; letter-spacing:1.5px; color:var(--ink); opacity:0.6; line-height:var(--row); }
-.value{ font-size:38px; line-height: calc(var(--row) * 2); font-weight:bold; }
+.value{ font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold; }
 .value.small{ font-size:20px; line-height:var(--row); }
 
 .collapse-toggle{ cursor:pointer; display:flex; align-items:baseline; gap:6px; }
@@ -643,9 +643,20 @@ function billFloorFlag(bill){
   return 'Paying this in full dips you below your floor — consider minimum, or wait for income.';
 }
 
+function fitSpendableCash(){
+  var el = document.getElementById('rw-spendable');
+  var size = 48;
+  el.style.fontSize = size + 'px';
+  while(el.scrollWidth > el.clientWidth && size > 22){
+    size -= 2;
+    el.style.fontSize = size + 'px';
+  }
+}
+
 /* ============ RENDER: RUNWAY ============ */
 function renderRunway(){
   document.getElementById('rw-spendable').textContent = fmt(spendableCash());
+  fitSpendableCash();
   document.getElementById('rw-windowDays').value = windowDays();
 
   var list = document.getElementById('rw-accounts-list');
