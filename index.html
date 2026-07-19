@@ -150,6 +150,7 @@ main{
   margin-top:8px; padding:8px 10px; border:1.5px dashed var(--danger); color:var(--danger);
   font-size:13.5px; line-height:18px;
 }
+#priority-stale-notice:active{ background:rgba(211,75,75,0.12); }
 
 .muted{ opacity:0.55; }
 
@@ -412,6 +413,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always.</p>
 
       <button class="add-btn" id="suggestOrderBtn" type="button" style="border-bottom:1.5px solid var(--rule-solid); color:var(--rule-solid);">Suggest order</button>
+      <div class="warning" id="priority-stale-notice" style="display:none; cursor:pointer;">Priority order may be out of date &mdash; a deadline has shifted since you last suggested an order. Tap here to refresh it.</div>
 
       <div id="debts-list" class="list" style="margin-top:6px;"></div>
       <button class="add-btn" id="addDebtBtn" type="button">+ Add debt</button>
@@ -807,6 +809,11 @@ function renderIncome(){
 function renderPriority(){
   var list = document.getElementById('debts-list');
   var sorted = DATA.debts.slice().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
+
+  var suggested = computeSuggestedOrder(DATA.debts);
+  var isStale = sorted.length > 1 && sorted.some(function(d, i){ return d.id !== suggested[i].id; });
+  document.getElementById('priority-stale-notice').style.display = isStale ? 'block' : 'none';
+
   if(!sorted.length){
     list.innerHTML = '<div class="hint">No debts yet.</div>';
     return;
@@ -1029,6 +1036,7 @@ function openBillForm(existing){
         promos:[{ id:uid(), balance:full, apr:apr, promoType:'none', promoDeadline:null, revertApr:null }] };
       DATA.debts.push(newDebt);
       bill.linkedDebtId = newDebt.id;
+      applySuggestedOrder();
     } else if(!asDebt && bill.linkedDebtId){
       bill.linkedDebtId = null;
     }
@@ -1155,6 +1163,7 @@ function openDebtForm(existing){
       var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
       DATA.debts.push({ id:uid(), name:name, promos:promos, priorityRank:maxRank+1 });
     }
+    applySuggestedOrder();
     if(isModal){ closeModal(); } else { closeForm('debtForm'); }
     save();
   });
@@ -1180,9 +1189,9 @@ document.getElementById('floor-input').addEventListener('change', function(e){
   save();
 });
 
-document.getElementById('suggestOrderBtn').addEventListener('click', function(){
-  var debts = DATA.debts.slice();
-  debts.sort(function(a,b){
+function computeSuggestedOrder(debts){
+  var sorted = debts.slice();
+  sorted.sort(function(a,b){
     var aDays = debtMostUrgentDays(a);
     var bDays = debtMostUrgentDays(b);
     if(aDays !== null && bDays !== null) return aDays - bDays;
@@ -1190,8 +1199,21 @@ document.getElementById('suggestOrderBtn').addEventListener('click', function(){
     if(bDays !== null) return 1;
     return debtEffectiveApr(b) - debtEffectiveApr(a);
   });
-  debts.forEach(function(d, i){ d.priorityRank = i+1; });
-  DATA.debts = debts;
+  return sorted;
+}
+
+function applySuggestedOrder(){
+  var sorted = computeSuggestedOrder(DATA.debts);
+  sorted.forEach(function(d, i){ d.priorityRank = i+1; });
+  DATA.debts = sorted;
+}
+
+document.getElementById('suggestOrderBtn').addEventListener('click', function(){
+  applySuggestedOrder();
+  save();
+});
+document.getElementById('priority-stale-notice').addEventListener('click', function(){
+  applySuggestedOrder();
   save();
 });
 
