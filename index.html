@@ -454,7 +454,7 @@ var STORAGE_KEY = 'runway_v1';
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
 function defaultData(){
-  return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30 };
+  return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30, priorityManualOverride:false };
 }
 
 function normalizeDebt(d){
@@ -1036,7 +1036,7 @@ function openBillForm(existing){
         promos:[{ id:uid(), balance:full, apr:apr, promoType:'none', promoDeadline:null, revertApr:null }] };
       DATA.debts.push(newDebt);
       bill.linkedDebtId = newDebt.id;
-      applySuggestedOrder();
+      tryAutoSuggest();
     } else if(!asDebt && bill.linkedDebtId){
       bill.linkedDebtId = null;
     }
@@ -1163,7 +1163,7 @@ function openDebtForm(existing){
       var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
       DATA.debts.push({ id:uid(), name:name, promos:promos, priorityRank:maxRank+1 });
     }
-    applySuggestedOrder();
+    tryAutoSuggest();
     if(isModal){ closeModal(); } else { closeForm('debtForm'); }
     save();
   });
@@ -1208,11 +1208,21 @@ function applySuggestedOrder(){
   DATA.debts = sorted;
 }
 
+function tryAutoSuggest(){
+  if(DATA.priorityManualOverride){
+    alert('Your manual priority order was kept. To go back to automatic prioritizing, tap "Suggest order" at the top of the Priority screen.');
+    return;
+  }
+  applySuggestedOrder();
+}
+
 document.getElementById('suggestOrderBtn').addEventListener('click', function(){
+  DATA.priorityManualOverride = false;
   applySuggestedOrder();
   save();
 });
 document.getElementById('priority-stale-notice').addEventListener('click', function(){
+  DATA.priorityManualOverride = false;
   applySuggestedOrder();
   save();
 });
@@ -1258,6 +1268,7 @@ document.body.addEventListener('click', function(e){
       var tmp = sorted[idx].priorityRank;
       sorted[idx].priorityRank = sorted[swapIdx].priorityRank;
       sorted[swapIdx].priorityRank = tmp;
+      DATA.priorityManualOverride = true;
       save();
     }
   }
