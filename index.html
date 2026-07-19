@@ -23,7 +23,6 @@
   --danger:#d34b4b;
   --row: 28px;
   --margin-x: 40px;
-  --tabbar-h: 60px;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;background:var(--paper);}
@@ -85,17 +84,14 @@ header h1{
 .menu-dropdown button:active{ background:rgba(70,110,200,0.12); }
 
 .reset-bar{
-  display:block; width:100%;
-  position:fixed; left:0; right:0;
-  bottom: var(--tabbar-h);
-  max-width:520px; margin:0 auto;
+  display:none; width:100%;
   background:var(--ink); color:var(--paper); border:none;
   border-top:2px solid var(--ink);
   padding:14px 0;
   font-size:14px; font-weight:bold; letter-spacing:1px;
   text-align:center; cursor:pointer;
-  z-index:4;
 }
+.reset-bar.show{ display:block; }
 .reset-bar:active{ background:var(--rule-solid); }
 
 /* ---------- ruled paper content area ---------- */
@@ -280,13 +276,16 @@ main{
 input[type=number]::-webkit-inner-spin-button{ opacity:1; }
 input[type=date]{ min-height:36px; }
 
-/* ---------- tab bar ---------- */
-nav#tabbar{
+/* ---------- bottom bar (reset button + tab nav, flush-stacked) ---------- */
+#bottomBar{
   position:fixed; bottom:0; left:0; right:0;
-  min-height: var(--tabbar-h);
+  max-width:520px; margin:0 auto;
+  display:flex; flex-direction:column;
+  z-index:10;
+}
+nav#tabbar{
   display:flex; background:var(--paper); border-top:2px solid var(--ink);
   padding-bottom: env(safe-area-inset-bottom, 0);
-  max-width:520px; margin:0 auto;
   box-sizing:border-box;
 }
 nav#tabbar .tab{
@@ -297,7 +296,7 @@ nav#tabbar .tab:active{ background:rgba(70,110,200,0.15); }
 nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--rule-solid); margin-top:-2px; }
 
 @media (min-width:521px){
-  nav#tabbar{ left:50%; transform:translateX(-50%); }
+  #bottomBar{ left:50%; transform:translateX(-50%); }
 }
 </style>
 </head>
@@ -390,8 +389,6 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div class="section-title collapse-toggle" data-target="bills-paid" style="margin-top:22px;">PAID <span class="muted" id="count-bills-paid"></span><span class="collapse-arrow" id="arrow-bills-paid">&#9656;</span></div>
       <div id="bills-paid" class="list collapsed"></div>
 
-      <button id="btnReset" class="reset-bar" type="button">Start next month</button>
-
     </section>
 
     <!-- ================= SCREEN E: INCOME ================= -->
@@ -426,13 +423,16 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
 
   </main>
 
-  <nav id="tabbar">
-    <button class="tab active" data-screen="runway" type="button">RUNWAY</button>
-    <button class="tab" data-screen="bills" type="button">BILLS</button>
-    <button class="tab" data-screen="income" type="button">INCOME</button>
-    <button class="tab" data-screen="priority" type="button">PRIORITY</button>
-    <button class="tab" data-screen="floor" type="button">FLOOR</button>
-  </nav>
+  <div id="bottomBar">
+    <button id="btnReset" class="reset-bar" type="button">Start next month</button>
+    <nav id="tabbar">
+      <button class="tab active" data-screen="runway" type="button">RUNWAY</button>
+      <button class="tab" data-screen="bills" type="button">BILLS</button>
+      <button class="tab" data-screen="income" type="button">INCOME</button>
+      <button class="tab" data-screen="priority" type="button">PRIORITY</button>
+      <button class="tab" data-screen="floor" type="button">FLOOR</button>
+    </nav>
+  </div>
 
 </div>
 
@@ -875,12 +875,16 @@ document.getElementById('rw-verdict').addEventListener('click', function(){
 });
 
 /* ============ TAB NAV ============ */
+function updateResetBarVisibility(screenName){
+  document.getElementById('btnReset').classList.toggle('show', screenName === 'bills');
+}
 document.querySelectorAll('#tabbar .tab').forEach(function(btn){
   btn.addEventListener('click', function(){
     document.querySelectorAll('#tabbar .tab').forEach(function(t){ t.classList.remove('active'); });
     document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
     btn.classList.add('active');
     document.getElementById('screen-' + btn.dataset.screen).classList.add('active');
+    updateResetBarVisibility(btn.dataset.screen);
     document.querySelector('main').scrollTop = 0;
     window.scrollTo(0,0);
   });
@@ -951,11 +955,24 @@ document.getElementById('modalOverlay').addEventListener('click', function(e){
   if(e.target === e.currentTarget) closeModal();
 });
 
+var BILL_TYPES = [
+  ['general','General'], ['rent','Rent / Mortgage'], ['utility','Utility'],
+  ['subscription','Subscription'], ['insurance','Insurance'],
+  ['creditCard','Credit Card'], ['loan','Loan'], ['other','Other']
+];
+function isDebtBillType(type){ return type === 'creditCard' || type === 'loan'; }
+
 function billFormHtml(b){
   b = b || {};
   var recurring = b.recurring !== false;
+  var type = b.type || 'general';
+  var typeOptions = BILL_TYPES.map(function(t){
+    return '<option value="'+t[0]+'" '+(type===t[0]?'selected':'')+'>'+t[1]+'</option>';
+  }).join('');
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-bill-name" value="'+escapeHtml(b.name||'')+'" placeholder="e.g. Mortgage"></div>' +
+    '<div class="form-row"><label>TYPE</label><select id="f-bill-type">'+typeOptions+'</select></div>' +
+    '<div class="form-row" id="row-bill-apr" style="display:'+(isDebtBillType(type)?'block':'none')+';"><label>APR (interest rate)</label><input type="number" step="0.01" id="f-bill-apr" value="'+(b.apr!=null?b.apr:'')+'" placeholder="e.g. 24.99"></div>' +
     '<div class="form-row"><label>FULL AMOUNT</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>' +
     '<div class="form-row"><label>MIN AMOUNT</label><input type="number" step="0.01" id="f-bill-min" value="'+(b.amountMin!=null?b.amountMin:'')+'" placeholder="0.00"></div>' +
     '<div class="form-row"><label>DUE DATE</label><input type="date" id="f-bill-due" value="'+(b.dueDate||'')+'"></div>' +
@@ -975,14 +992,19 @@ function billFormHtml(b){
 }
 
 function openBillForm(existing){
-  var isModal = !!existing;
-  var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('billForm');
+  var isModal = true;
+  var formEl = document.getElementById('modalCard');
   formEl.innerHTML = billFormHtml(existing);
-  if(isModal) document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('modalOverlay').classList.add('open');
+
+  document.getElementById('f-bill-type').addEventListener('change', function(){
+    document.getElementById('row-bill-apr').style.display = isDebtBillType(this.value) ? 'block' : 'none';
+  });
 
   document.getElementById('f-bill-save').addEventListener('click', function(){
     var name = document.getElementById('f-bill-name').value.trim();
     if(!name) return;
+    var type = document.getElementById('f-bill-type').value;
     var full = num(document.getElementById('f-bill-full').value);
     var min = num(document.getElementById('f-bill-min').value);
     var due = document.getElementById('f-bill-due').value;
@@ -990,19 +1012,21 @@ function openBillForm(existing){
     var recurring = document.getElementById('f-bill-recurring').value === 'yes';
     var paid = document.getElementById('f-bill-paid').checked;
     var asDebt = document.getElementById('f-bill-asdebt').checked;
+    var aprRaw = document.getElementById('f-bill-apr').value;
+    var apr = (isDebtBillType(type) && aprRaw !== '') ? num(aprRaw) : null;
     var bill;
     if(existing){
-      existing.name=name; existing.amountFull=full; existing.amountMin=min;
+      existing.name=name; existing.type=type; existing.apr=apr; existing.amountFull=full; existing.amountMin=min;
       existing.dueDate=due; existing.payMode=mode; existing.recurring=recurring; existing.paid=paid;
       bill = existing;
     } else {
-      bill = { id:uid(), name:name, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
+      bill = { id:uid(), name:name, type:type, apr:apr, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
       DATA.bills.push(bill);
     }
     if(asDebt && !bill.linkedDebtId){
       var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
       var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id,
-        promos:[{ id:uid(), balance:full, apr:null, promoType:'none', promoDeadline:null, revertApr:null }] };
+        promos:[{ id:uid(), balance:full, apr:apr, promoType:'none', promoDeadline:null, revertApr:null }] };
       DATA.debts.push(newDebt);
       bill.linkedDebtId = newDebt.id;
     } else if(!asDebt && bill.linkedDebtId){
@@ -1299,14 +1323,6 @@ if('serviceWorker' in navigator){
 
 /* ============ INIT ============ */
 renderAll();
-
-function syncTabbarHeight(){
-  var tb = document.getElementById('tabbar');
-  document.documentElement.style.setProperty('--tabbar-h', tb.offsetHeight + 'px');
-}
-syncTabbarHeight();
-window.addEventListener('resize', syncTabbarHeight);
-window.addEventListener('orientationchange', syncTabbarHeight);
 
 })();
 </script>
