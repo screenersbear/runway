@@ -388,9 +388,10 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN C: BILLS ================= -->
     <section id="screen-bills" class="screen">
 
+      <button id="btnReset" class="reset-bar show" type="button">Start next month</button>
+
       <div class="section-title collapse-toggle" data-target="bills-pending">PENDING <span class="muted" id="count-bills-pending"></span><span class="collapse-arrow" id="arrow-bills-pending">&#9662;</span></div>
       <div id="bills-pending" class="list"></div>
-      <button class="add-btn" id="addBillBtn" type="button">+ Add bill</button>
       <div id="billForm"></div>
 
       <div class="section-title collapse-toggle" data-target="bills-paid" style="margin-top:22px;">PAID <span class="muted" id="count-bills-paid"></span><span class="collapse-arrow" id="arrow-bills-paid">&#9656;</span></div>
@@ -431,7 +432,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
   </main>
 
   <div id="bottomBar">
-    <button id="btnReset" class="reset-bar" type="button">Start next month</button>
+    <button id="addBillBannerBtn" class="reset-bar" type="button">+ Add bill</button>
     <nav id="tabbar">
       <button class="tab active" data-screen="runway" type="button">RUNWAY</button>
       <button class="tab" data-screen="bills" type="button">BILLS</button>
@@ -892,7 +893,7 @@ document.getElementById('rw-verdict').addEventListener('click', function(){
 
 /* ============ TAB NAV ============ */
 function updateResetBarVisibility(screenName){
-  document.getElementById('btnReset').classList.toggle('show', screenName === 'bills');
+  document.getElementById('addBillBannerBtn').classList.toggle('show', screenName === 'bills');
 }
 document.querySelectorAll('#tabbar .tab').forEach(function(btn){
   btn.addEventListener('click', function(){
@@ -1289,7 +1290,7 @@ function openDebtForm(existing){
 
 /* ============ EVENT DELEGATION ============ */
 document.getElementById('rw-addAccountBtn').addEventListener('click', function(){ openAccountForm(null); });
-document.getElementById('addBillBtn').addEventListener('click', function(){ openBillForm(null); });
+document.getElementById('addBillBannerBtn').addEventListener('click', function(){ openBillForm(null); });
 document.getElementById('addIncomeBtn').addEventListener('click', function(){ openIncomeForm(null); });
 
 document.getElementById('rw-windowDays').addEventListener('change', function(e){
