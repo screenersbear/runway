@@ -21,6 +21,7 @@
   --rule: rgba(70,110,200,0.38);
   --rule-solid:#466ec8;
   --danger:#d34b4b;
+  --success:#2f7a3d;
   --row: 28px;
   --margin-x: 40px;
 }
@@ -221,6 +222,7 @@ main{
 
 .paid-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; }
 .paid-check input{ width:16px; height:16px; }
+.paid-label{ color:var(--success); font-weight:bold; }
 
 .segmented{ display:inline-flex; border:1px solid var(--ink); border-radius:3px; overflow:hidden; }
 .segmented button{
@@ -488,6 +490,13 @@ function normalizeDebt(d){
   return d;
 }
 
+function normalizeBill(b){
+  if(!b.recurrence){
+    b.recurrence = (b.recurring === false) ? 'once' : 'monthly';
+  }
+  return b;
+}
+
 function loadData(){
   var raw = localStorage.getItem(STORAGE_KEY);
   if(!raw) return defaultData();
@@ -496,6 +505,7 @@ function loadData(){
     var def = defaultData();
     for(var k in def){ if(d[k]===undefined) d[k]=def[k]; }
     d.debts = (d.debts||[]).map(normalizeDebt);
+    d.bills = (d.bills||[]).map(normalizeBill);
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -547,11 +557,11 @@ function fmtDate(dateStr){
   return months[Number(parts[1])-1] + ' ' + Number(parts[2]) + ', ' + parts[0];
 }
 
-function addOneMonth(dateStr){
+function addMonths(dateStr, n){
   if(!dateStr) return dateStr;
   var parts = dateStr.split('-');
   var y = Number(parts[0]), m = Number(parts[1])-1, d = Number(parts[2]);
-  var targetMonth = m + 1;
+  var targetMonth = m + n;
   var targetYear = y + Math.floor(targetMonth / 12);
   targetMonth = ((targetMonth % 12) + 12) % 12;
   var lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
@@ -560,6 +570,7 @@ function addOneMonth(dateStr){
   var dd = String(newDay).padStart(2, '0');
   return targetYear + '-' + mm + '-' + dd;
 }
+function addOneMonth(dateStr){ return addMonths(dateStr, 1); }
 
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, function(c){
@@ -783,7 +794,7 @@ function billRowHtml(b){
   var dueSoon = !b.paid && d <= 5;
   var overdue = !b.paid && d < 0;
   var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
-  var onceBadge = b.recurring === false ? '<span class="badge onetime">ONE-TIME</span>' : '';
+  var onceBadge = b.recurrence === 'once' ? '<span class="badge onetime">ONE-TIME</span>' : (b.recurrence === 'quarterly' ? '<span class="badge onetime">QUARTERLY</span>' : '');
   var debtBadge = b.linkedDebtId ? '<span class="badge onetime">&#8594; TRACKED AS DEBT</span>' : '';
   var flag = billFloorFlag(b);
   return '<div class="item' + (overdue ? ' overdue' : '') + '" data-id="'+b.id+'">' +
@@ -798,7 +809,7 @@ function billRowHtml(b){
         '<button data-act="paymode" data-mode="full" data-id="'+b.id+'" type="button" class="'+(b.payMode==='full'?'active':'')+'">full</button>' +
         '<button data-act="paymode" data-mode="min" data-id="'+b.id+'" type="button" class="'+(b.payMode==='min'?'active':'')+'">min</button>' +
       '</span>' +
-      '<label class="paid-check"><input type="checkbox" data-act="paid" data-id="'+b.id+'" ' + (b.paid?'checked':'') + '> paid</label>' +
+      '<label class="paid-check"><input type="checkbox" data-act="paid" data-id="'+b.id+'" ' + (b.paid?'checked':'') + '> <span class="paid-label">paid</span></label>' +
       '<button data-act="edit-bill" data-id="'+b.id+'" type="button">edit</button>' +
       '<button data-act="del-bill" data-id="'+b.id+'" type="button">delete</button>' +
     '</div>' +
@@ -1037,7 +1048,7 @@ function isDebtBillType(type){ return type === 'creditCard' || type === 'loan' |
 
 function billFormHtml(b){
   b = b || {};
-  var recurring = b.recurring !== false;
+  var recurrence = b.recurrence || 'monthly';
   var type = b.type || 'general';
   var isDebt = isDebtBillType(type);
   var typeOptions = BILL_TYPES.map(function(t){
@@ -1071,6 +1082,7 @@ function billFormHtml(b){
       '<button type="button" class="add-btn" id="addPromoRowBtn">+ Add another balance / promo</button>' +
     '</div>' +
     fullAmountFieldHtml +
+    '<div class="warning" id="bucket-sum-warning" style="display:none;"></div>' +
     (isDebt ? '' : minAmountFieldHtml) +
     '<div class="form-row"><label>DUE DATE</label><input type="date" id="f-bill-due" value="'+(b.dueDate||'')+'"></div>' +
     '<div class="form-row"><label>PAY MODE</label>' +
@@ -1084,7 +1096,11 @@ function billFormHtml(b){
     bankFieldHtml +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-autopay" '+(b.autopay?'checked':'')+' style="width:auto;"> Autopay enabled</label></div>' +
     '<div class="form-row"><label>REPEATS</label>' +
-      '<select id="f-bill-recurring"><option value="yes" '+(recurring?'selected':'')+'>Recurring — rolls to next month when paid</option><option value="no" '+(!recurring?'selected':'')+'>One-time — doesn’t roll over</option></select>' +
+      '<select id="f-bill-recurring">' +
+        '<option value="monthly" '+(recurrence==='monthly'?'selected':'')+'>Recurring monthly — rolls to next month when paid</option>' +
+        '<option value="quarterly" '+(recurrence==='quarterly'?'selected':'')+'>Recurring quarterly — rolls forward 3 months when paid</option>' +
+        '<option value="once" '+(recurrence==='once'?'selected':'')+'>One-time — doesn’t roll over</option>' +
+      '</select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-paid" '+(b.paid?'checked':'')+' style="width:auto;"> Paid</label></div>' +
     (isDebt ? '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(b.linkedDebtId?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' : '') +
@@ -1117,7 +1133,7 @@ function openBillForm(existing){
         dueDate: document.getElementById('f-bill-due').value,
         payMode: document.getElementById('f-bill-mode').value,
         customAmount: document.getElementById('f-bill-custom').value,
-        recurring: document.getElementById('f-bill-recurring').value === 'yes',
+        recurrence: document.getElementById('f-bill-recurring').value,
         paid: document.getElementById('f-bill-paid').checked,
         bankAccountId: document.getElementById('f-bill-bank') ? document.getElementById('f-bill-bank').value : (existing ? existing.bankAccountId : null),
         autopay: document.getElementById('f-bill-autopay').checked,
@@ -1147,7 +1163,7 @@ function openBillForm(existing){
       var mode = document.getElementById('f-bill-mode').value;
       var customRaw = document.getElementById('f-bill-custom').value;
       var customAmount = customRaw === '' ? null : num(customRaw);
-      var recurring = document.getElementById('f-bill-recurring').value === 'yes';
+      var recurrence = document.getElementById('f-bill-recurring').value;
       var paid = document.getElementById('f-bill-paid').checked;
       var bankAccountId = document.getElementById('f-bill-bank').value || null;
       var autopay = document.getElementById('f-bill-autopay').checked;
@@ -1160,9 +1176,9 @@ function openBillForm(existing){
         var aprRaw = row.querySelector('.f-debt-apr').value;
         var apr = aprRaw === '' ? null : num(aprRaw);
         var promoType = row.querySelector('.f-debt-promo').value;
-        var deadline = row.querySelector('.f-debt-deadline').value || null;
+        var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
         var revertRaw = row.querySelector('.f-debt-revert').value;
-        var revert = revertRaw === '' ? null : num(revertRaw);
+        var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
         return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
       });
 
@@ -1172,11 +1188,11 @@ function openBillForm(existing){
       if(existing){
         existing.name=name; existing.type=type; existing.amountFull=full; existing.amountMin=min;
         existing.dueDate=due; existing.payMode=mode; existing.customAmount=customAmount;
-        existing.recurring=recurring; existing.paid=paid;
+        existing.recurrence=recurrence; existing.paid=paid;
         existing.bankAccountId=bankAccountId; existing.autopay=autopay;
         bill = existing;
       } else {
-        bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, customAmount:customAmount, recurring:recurring, paid:paid, bankAccountId:bankAccountId, autopay:autopay, linkedDebtId:null };
+        bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, customAmount:customAmount, recurrence:recurrence, paid:paid, bankAccountId:bankAccountId, autopay:autopay, linkedDebtId:null };
         DATA.bills.push(bill);
       }
       if(asDebt && isDebt){
@@ -1257,9 +1273,14 @@ function openIncomeForm(existing){
 function debtPromoRowHtml(p, idx, extraAfterBalance){
   p = p || {};
   var promo = p.promoType || 'none';
+  var hasPromo = promo !== 'none';
   return '<div class="promo-row">' +
     '<div class="promo-title" style="display:none;">Promo ' + ((idx||0)+1) + '</div>' +
-    '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" class="f-debt-bal" value="'+(p.balance!=null?p.balance:'')+'" placeholder="0.00"></div>' +
+    '<div class="form-row">' +
+      '<label class="f-debt-bal-label">' + (hasPromo?'PROMO AMOUNT':'BALANCE') + '</label>' +
+      '<input type="number" step="0.01" class="f-debt-bal" value="'+(p.balance!=null?p.balance:'')+'" placeholder="0.00">' +
+      '<p class="hint f-debt-bal-hint" style="padding-top:2px; display:'+(hasPromo?'block':'none')+';">Enter the full balance, or just the portion covered by this promo.</p>' +
+    '</div>' +
     (extraAfterBalance || '') +
     '<div class="form-row"><label>APR (base rate &mdash; applies now if there\'s no promo below, or automatically gets filled when promo deadline ends)</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
     '<div class="form-row"><label>PROMO TYPE</label>' +
@@ -1269,10 +1290,30 @@ function debtPromoRowHtml(p, idx, extraAfterBalance){
         '<option value="deferredInterest" '+(promo==='deferredInterest'?'selected':'')+'>Deferred interest</option>' +
       '</select>' +
     '</div>' +
-    '<div class="form-row"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
-    '<div class="form-row"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
+    '<div class="form-row promo-deadline-row" style="display:'+(hasPromo?'block':'none')+';"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
+    '<div class="form-row promo-revert-row" style="display:'+(hasPromo?'block':'none')+';"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
     '<button type="button" class="remove-row-btn" style="display:none;">Remove this balance / promo</button>' +
   '</div>';
+}
+
+function refreshBucketSumWarning(){
+  var warningEl = document.getElementById('bucket-sum-warning');
+  if(!warningEl) return;
+  var fullEl = document.getElementById('f-bill-full');
+  var rows = document.querySelectorAll('#promoRows .promo-row');
+  if(!fullEl || rows.length < 2 || getComputedStyle(fullEl.closest('.form-row')).display === 'none'){
+    warningEl.style.display = 'none';
+    return;
+  }
+  var sum = 0;
+  rows.forEach(function(row){ sum += num(row.querySelector('.f-debt-bal').value); });
+  var full = num(fullEl.value);
+  if(Math.abs(sum - full) > 0.01){
+    warningEl.textContent = 'Bucket amounts add up to ' + fmt(sum) + ' but Full Amount is ' + fmt(full) + ' — these should match.';
+    warningEl.style.display = 'block';
+  } else {
+    warningEl.style.display = 'none';
+  }
 }
 
 function refreshPromoRowsUI(){
@@ -1282,6 +1323,7 @@ function refreshPromoRowsUI(){
   var fullRow = document.getElementById('row-bill-full');
   if(typeEl && !isDebtBillType(typeEl.value)){
     if(fullRow) fullRow.style.display = 'block';
+    refreshBucketSumWarning();
     return; // non-debt bill type: bucket rows exist in the DOM but stay hidden under bill-debt-section
   }
   var rows = container.querySelectorAll('.promo-row');
@@ -1298,6 +1340,7 @@ function refreshPromoRowsUI(){
     }
   });
   if(fullRow) fullRow.style.display = multi ? 'block' : 'none';
+  refreshBucketSumWarning();
 }
 
 function debtFormHtml(d){
@@ -1337,9 +1380,9 @@ function openDebtForm(existing){
       var aprRaw = row.querySelector('.f-debt-apr').value;
       var apr = aprRaw === '' ? null : num(aprRaw);
       var promoType = row.querySelector('.f-debt-promo').value;
-      var deadline = row.querySelector('.f-debt-deadline').value || null;
+      var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
       var revertRaw = row.querySelector('.f-debt-revert').value;
-      var revert = revertRaw === '' ? null : num(revertRaw);
+      var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
       return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
     });
     if(existing){
@@ -1468,6 +1511,21 @@ document.body.addEventListener('change', function(e){
     var income = DATA.income.find(function(i){return i.id===e.target.dataset.id;});
     if(income){ income.received = e.target.checked; save(); }
   }
+  if(e.target.classList && e.target.classList.contains('f-debt-promo')){
+    var row = e.target.closest('.promo-row');
+    var hasPromo = e.target.value !== 'none';
+    row.querySelector('.promo-deadline-row').style.display = hasPromo ? 'block' : 'none';
+    row.querySelector('.promo-revert-row').style.display = hasPromo ? 'block' : 'none';
+    row.querySelector('.f-debt-bal-label').textContent = hasPromo ? 'PROMO AMOUNT' : 'BALANCE';
+    row.querySelector('.f-debt-bal-hint').style.display = hasPromo ? 'block' : 'none';
+    refreshBucketSumWarning();
+  }
+});
+
+document.body.addEventListener('input', function(e){
+  if(e.target.classList && (e.target.classList.contains('f-debt-bal') || e.target.id === 'f-bill-full')){
+    refreshBucketSumWarning();
+  }
 });
 
 /* ============ MENU ============ */
@@ -1505,10 +1563,10 @@ document.getElementById('btnExportMonthly').addEventListener('click', function()
     alert('No payment history yet — a record is created each time you tap "start next month" with paid bills or received income on the books.');
     return;
   }
-  var rows = [['Month Closed','Kind','Name','Type / Confidence','Amount','Pay Mode','Due / Expected Date','Recurring','Bank','Autopay']];
+  var rows = [['Month Closed','Kind','Name','Type / Confidence','Amount','Pay Mode','Due / Expected Date','Recurrence','Bank','Autopay']];
   DATA.paymentHistory.forEach(function(rec){
     rec.entries.forEach(function(e){
-      rows.push([rec.closedAt, 'Bill', e.name, e.type, num(e.amountPaid).toFixed(2), e.payMode, e.dueDate, e.recurring?'Yes':'No', e.bank||'', e.autopay?'Yes':'No']);
+      rows.push([rec.closedAt, 'Bill', e.name, e.type, num(e.amountPaid).toFixed(2), e.payMode, e.dueDate, e.recurrence || '', e.bank||'', e.autopay?'Yes':'No']);
     });
     (rec.incomeEntries||[]).forEach(function(e){
       rows.push([rec.closedAt, 'Income', e.name, e.confidence, num(e.amount).toFixed(2), '', e.expectedDate, '', '', '']);
@@ -1555,6 +1613,7 @@ document.getElementById('importFile').addEventListener('change', function(e){
       var def = defaultData();
       for(var k in def){ if(parsed[k]===undefined) parsed[k]=def[k]; }
       parsed.debts = (parsed.debts||[]).map(normalizeDebt);
+      parsed.bills = (parsed.bills||[]).map(normalizeBill);
       DATA = parsed;
       persist();
       renderAll();
@@ -1575,7 +1634,7 @@ function recordMonthlyPayments(){
     var acct = b.bankAccountId ? DATA.accounts.find(function(a){ return a.id === b.bankAccountId; }) : null;
     return {
       billId: b.id, name: b.name, type: b.type, amountPaid: billAmount(b), payMode: b.payMode,
-      dueDate: b.dueDate, recurring: b.recurring !== false, bank: acct ? acct.name : '', autopay: !!b.autopay
+      dueDate: b.dueDate, recurrence: b.recurrence || 'monthly', bank: acct ? acct.name : '', autopay: !!b.autopay
     };
   });
   var incomeEntries = receivedIncome.map(function(i){
@@ -1585,26 +1644,31 @@ function recordMonthlyPayments(){
 }
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Start next month: paid recurring bills roll their due date forward one month and unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
+  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
   recordMonthlyPayments();
   DATA.bills.forEach(function(b){
-    if(b.paid && b.recurring !== false){
-      b.dueDate = addOneMonth(b.dueDate);
-      b.paid = false;
-    }
+    if(!b.paid) return;
+    if(b.recurrence === 'monthly'){ b.dueDate = addMonths(b.dueDate, 1); b.paid = false; }
+    else if(b.recurrence === 'quarterly'){ b.dueDate = addMonths(b.dueDate, 3); b.paid = false; }
   });
   DATA.income = DATA.income.filter(function(i){ return !i.received; });
   save();
 });
 
 /* ============ WEEKLY BILLS-DUE POPUP ============ */
+function billsDueThisWeek(){
+  return DATA.bills.filter(function(b){ return daysUntil(b.dueDate) <= 7; })
+    .sort(function(a,b){ return daysUntil(a.dueDate) - daysUntil(b.dueDate); });
+}
+
 function weeklyBillsPopupHtml(bills){
   var rows = bills.length ? bills.map(function(b){
     var d = daysUntil(b.dueDate);
     var when = d < 0 ? 'overdue' : (d === 0 ? 'due today' : 'due in ' + d + ' day' + (d===1?'':'s'));
+    var paidBadge = b.paid ? ' <span class="badge received">PAID</span>' : '';
     return '<div class="item">' +
       '<div class="item-top"><span class="item-name">' + escapeHtml(b.name) + '</span><span class="item-amt">' + fmt(billAmount(b)) + '</span></div>' +
-      '<div class="item-sub">' + when + ' &mdash; ' + fmtDate(b.dueDate) + '</div>' +
+      '<div class="item-sub">' + when + ' &mdash; ' + fmtDate(b.dueDate) + paidBadge + '</div>' +
     '</div>';
   }).join('') : '<p class="hint">Nothing due in the next 7 days.</p>';
   return '<div class="form">' +
@@ -1619,7 +1683,7 @@ function maybeShowWeeklyBillsPopup(){
   if(DATA.lastWeeklyPopupWeek === weekKey) return;
   DATA.lastWeeklyPopupWeek = weekKey;
   persist();
-  var due = billsInWindow(7);
+  var due = billsDueThisWeek();
   document.getElementById('modalCard').innerHTML = weeklyBillsPopupHtml(due);
   document.getElementById('modalOverlay').classList.add('open');
   document.getElementById('f-weeklypopup-close').addEventListener('click', closeModal);
