@@ -96,6 +96,7 @@ header h1{
 }
 .reset-bar.show{ display:block; }
 .reset-bar:active{ background:var(--rule-solid); }
+#btnReset{ font-size:16px; margin-bottom:14px; }
 
 /* ---------- ruled paper content area ---------- */
 main{
@@ -391,7 +392,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN C: BILLS ================= -->
     <section id="screen-bills" class="screen">
 
-      <button id="btnReset" class="reset-bar show" type="button">Start next month</button>
+      <button id="btnReset" class="reset-bar show" type="button">start next month</button>
 
       <div class="section-title collapse-toggle" data-target="bills-pending">PENDING <span class="muted" id="count-bills-pending"></span><span class="collapse-arrow" id="arrow-bills-pending">&#9662;</span></div>
       <div id="bills-pending" class="list"></div>
@@ -405,10 +406,13 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN E: INCOME ================= -->
     <section id="screen-income" class="screen">
 
-      <div class="section-title">INCOME</div>
-      <div id="income-list" class="list"></div>
+      <div class="section-title collapse-toggle" data-target="income-pending">PENDING <span class="muted" id="count-income-pending"></span><span class="collapse-arrow" id="arrow-income-pending">&#9662;</span></div>
+      <div id="income-pending" class="list"></div>
       <button class="add-btn" id="addIncomeBtn" type="button">+ Add income</button>
       <div id="incomeForm"></div>
+
+      <div class="section-title collapse-toggle" data-target="income-received" style="margin-top:22px;">RECEIVED <span class="muted" id="count-income-received"></span><span class="collapse-arrow" id="arrow-income-received">&#9656;</span></div>
+      <div id="income-received" class="list collapsed"></div>
 
       <div class="line" style="margin-top:16px;">
         total expected income <strong id="income-total">$0.00</strong>
@@ -464,7 +468,7 @@ var STORAGE_KEY = 'runway_v1';
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
 function defaultData(){
-  return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30, priorityManualOverride:false, paymentHistory:[] };
+  return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30, priorityManualOverride:false, paymentHistory:[], lastWeeklyPopupWeek:null };
 }
 
 function normalizeDebt(d){
@@ -528,6 +532,12 @@ function daysUntil(dateStr){
 
 function isoDate(d){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function startOfWeek(d){
+  var day = d.getDay();
+  var diff = (day === 0 ? -6 : 1) - day;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff);
 }
 
 function fmtDate(dateStr){
@@ -813,41 +823,59 @@ function renderBills(){
 }
 
 /* ============ RENDER: INCOME ============ */
+function incomeRowHtml(i){
+  var badgeClass = i.received ? 'received' : i.confidence;
+  var badgeText = i.received ? 'RECEIVED' : i.confidence.toUpperCase();
+  return '<div class="item" data-id="'+i.id+'">' +
+    '<div class="item-top">' +
+      '<span class="item-name">' + escapeHtml(i.name) + '</span>' +
+      '<span class="item-amt">' + fmt(i.amount) + '</span>' +
+    '</div>' +
+    '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
+    '<div class="item-actions">' +
+      '<label class="paid-check"><input type="checkbox" data-act="received" data-id="'+i.id+'" ' + (i.received?'checked':'') + '> received</label>' +
+      '<button data-act="edit-income" data-id="'+i.id+'" type="button">edit</button>' +
+      '<button data-act="del-income" data-id="'+i.id+'" type="button">delete</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderIncome(){
-  var ilist = document.getElementById('income-list');
-  var isorted = DATA.income.slice().sort(function(a,b){ return daysUntil(a.expectedDate) - daysUntil(b.expectedDate); });
-  if(!isorted.length){
-    ilist.innerHTML = '<div class="hint">No income entries yet.</div>';
-  } else {
-    ilist.innerHTML = isorted.map(function(i){
-      var badgeClass = i.received ? 'received' : i.confidence;
-      var badgeText = i.received ? 'RECEIVED' : i.confidence.toUpperCase();
-      return '<div class="item" data-id="'+i.id+'">' +
-        '<div class="item-top">' +
-          '<span class="item-name">' + escapeHtml(i.name) + '</span>' +
-          '<span class="item-amt">' + fmt(i.amount) + '</span>' +
-        '</div>' +
-        '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
-        '<div class="item-actions">' +
-          '<label class="paid-check"><input type="checkbox" data-act="received" data-id="'+i.id+'" ' + (i.received?'checked':'') + '> received</label>' +
-          '<button data-act="edit-income" data-id="'+i.id+'" type="button">edit</button>' +
-          '<button data-act="del-income" data-id="'+i.id+'" type="button">delete</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-  }
+  var pending = DATA.income.filter(function(i){ return !i.received; })
+    .sort(function(a,b){ return daysUntil(a.expectedDate) - daysUntil(b.expectedDate); });
+  var received = DATA.income.filter(function(i){ return i.received; })
+    .sort(function(a,b){ return daysUntil(a.expectedDate) - daysUntil(b.expectedDate); });
+
+  document.getElementById('income-pending').innerHTML = pending.length
+    ? pending.map(incomeRowHtml).join('')
+    : '<div class="hint">No pending income.</div>';
+  document.getElementById('income-received').innerHTML = received.length
+    ? received.map(incomeRowHtml).join('')
+    : '<div class="hint">No received income yet.</div>';
+
+  document.getElementById('count-income-pending').textContent = '(' + pending.length + ')';
+  document.getElementById('count-income-received').textContent = '(' + received.length + ')';
 
   document.getElementById('income-total').textContent = fmt(totalExpectedIncome());
 }
 
 /* ============ RENDER: PRIORITY ============ */
+function priorityOrderIsStale(){
+  var sorted = DATA.debts.slice().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
+  var suggested = computeSuggestedOrder(DATA.debts);
+  return sorted.length > 1 && sorted.some(function(d, i){ return d.id !== suggested[i].id; });
+}
+
 function renderPriority(){
   var list = document.getElementById('debts-list');
-  var sorted = DATA.debts.slice().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
 
-  var suggested = computeSuggestedOrder(DATA.debts);
-  var isStale = sorted.length > 1 && sorted.some(function(d, i){ return d.id !== suggested[i].id; });
-  document.getElementById('priority-stale-notice').style.display = isStale ? 'block' : 'none';
+  if(!DATA.priorityManualOverride && priorityOrderIsStale()){
+    applySuggestedOrder();
+    persist();
+  }
+
+  var sorted = DATA.debts.slice().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
+  document.getElementById('priority-stale-notice').style.display = priorityOrderIsStale() ? 'block' : 'none';
 
   if(!sorted.length){
     list.innerHTML = '<div class="hint">No debts yet.</div>';
@@ -1233,7 +1261,7 @@ function debtPromoRowHtml(p, idx, extraAfterBalance){
     '<div class="promo-title" style="display:none;">Promo ' + ((idx||0)+1) + '</div>' +
     '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" class="f-debt-bal" value="'+(p.balance!=null?p.balance:'')+'" placeholder="0.00"></div>' +
     (extraAfterBalance || '') +
-    '<div class="form-row"><label>APR (base rate &mdash; applies now if there\'s no promo below, or automatically once the promo ends)</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
+    '<div class="form-row"><label>APR (base rate &mdash; applies now if there\'s no promo below, or automatically gets filled when promo deadline ends)</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
     '<div class="form-row"><label>PROMO TYPE</label>' +
       '<select class="f-debt-promo">' +
         '<option value="none" '+(promo==='none'?'selected':'')+'>None</option>' +
@@ -1472,14 +1500,18 @@ function csvCell(v){
 
 document.getElementById('btnExportMonthly').addEventListener('click', function(){
   menuDropdown.classList.remove('open');
-  if(!DATA.paymentHistory.length){
-    alert('No payment history yet — a record is created each time you tap "Start next month" with paid bills on the books.');
+  var hasAny = DATA.paymentHistory.some(function(rec){ return rec.entries.length || (rec.incomeEntries||[]).length; });
+  if(!hasAny){
+    alert('No payment history yet — a record is created each time you tap "start next month" with paid bills or received income on the books.');
     return;
   }
-  var rows = [['Month Closed','Bill Name','Type','Amount Paid','Pay Mode','Due Date','Recurring','Bank','Autopay']];
+  var rows = [['Month Closed','Kind','Name','Type / Confidence','Amount','Pay Mode','Due / Expected Date','Recurring','Bank','Autopay']];
   DATA.paymentHistory.forEach(function(rec){
     rec.entries.forEach(function(e){
-      rows.push([rec.closedAt, e.name, e.type, num(e.amountPaid).toFixed(2), e.payMode, e.dueDate, e.recurring?'Yes':'No', e.bank||'', e.autopay?'Yes':'No']);
+      rows.push([rec.closedAt, 'Bill', e.name, e.type, num(e.amountPaid).toFixed(2), e.payMode, e.dueDate, e.recurring?'Yes':'No', e.bank||'', e.autopay?'Yes':'No']);
+    });
+    (rec.incomeEntries||[]).forEach(function(e){
+      rows.push([rec.closedAt, 'Income', e.name, e.confidence, num(e.amount).toFixed(2), '', e.expectedDate, '', '', '']);
     });
   });
   var csv = rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
@@ -1537,7 +1569,8 @@ document.getElementById('importFile').addEventListener('change', function(e){
 
 function recordMonthlyPayments(){
   var paidBills = DATA.bills.filter(function(b){ return b.paid; });
-  if(!paidBills.length) return;
+  var receivedIncome = DATA.income.filter(function(i){ return i.received; });
+  if(!paidBills.length && !receivedIncome.length) return;
   var entries = paidBills.map(function(b){
     var acct = b.bankAccountId ? DATA.accounts.find(function(a){ return a.id === b.bankAccountId; }) : null;
     return {
@@ -1545,11 +1578,14 @@ function recordMonthlyPayments(){
       dueDate: b.dueDate, recurring: b.recurring !== false, bank: acct ? acct.name : '', autopay: !!b.autopay
     };
   });
-  DATA.paymentHistory.push({ id: uid(), closedAt: isoDate(todayMid()), entries: entries });
+  var incomeEntries = receivedIncome.map(function(i){
+    return { incomeId: i.id, name: i.name, amount: num(i.amount), confidence: i.confidence, expectedDate: i.expectedDate };
+  });
+  DATA.paymentHistory.push({ id: uid(), closedAt: isoDate(todayMid()), entries: entries, incomeEntries: incomeEntries });
 }
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Start next month: paid recurring bills roll their due date forward one month and unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Everything currently marked paid is recorded to your payment history.')) return;
+  if(!confirm('Start next month: paid recurring bills roll their due date forward one month and unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
   recordMonthlyPayments();
   DATA.bills.forEach(function(b){
     if(b.paid && b.recurring !== false){
@@ -1557,8 +1593,37 @@ document.getElementById('btnReset').addEventListener('click', function(){
       b.paid = false;
     }
   });
+  DATA.income = DATA.income.filter(function(i){ return !i.received; });
   save();
 });
+
+/* ============ WEEKLY BILLS-DUE POPUP ============ */
+function weeklyBillsPopupHtml(bills){
+  var rows = bills.length ? bills.map(function(b){
+    var d = daysUntil(b.dueDate);
+    var when = d < 0 ? 'overdue' : (d === 0 ? 'due today' : 'due in ' + d + ' day' + (d===1?'':'s'));
+    return '<div class="item">' +
+      '<div class="item-top"><span class="item-name">' + escapeHtml(b.name) + '</span><span class="item-amt">' + fmt(billAmount(b)) + '</span></div>' +
+      '<div class="item-sub">' + when + ' &mdash; ' + fmtDate(b.dueDate) + '</div>' +
+    '</div>';
+  }).join('') : '<p class="hint">Nothing due in the next 7 days.</p>';
+  return '<div class="form">' +
+    '<div class="section-title" style="margin-top:0;">BILLS DUE THIS WEEK</div>' +
+    '<div class="list">' + rows + '</div>' +
+    '<div class="form-actions"><button class="btn" id="f-weeklypopup-close" type="button">Got it</button></div>' +
+  '</div>';
+}
+
+function maybeShowWeeklyBillsPopup(){
+  var weekKey = isoDate(startOfWeek(todayMid()));
+  if(DATA.lastWeeklyPopupWeek === weekKey) return;
+  DATA.lastWeeklyPopupWeek = weekKey;
+  persist();
+  var due = billsInWindow(7);
+  document.getElementById('modalCard').innerHTML = weeklyBillsPopupHtml(due);
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('f-weeklypopup-close').addEventListener('click', closeModal);
+}
 
 /* ============ SERVICE WORKER (optional, offline caching) ============ */
 if('serviceWorker' in navigator){
@@ -1569,6 +1634,7 @@ if('serviceWorker' in navigator){
 
 /* ============ INIT ============ */
 renderAll();
+maybeShowWeeklyBillsPopup();
 
 })();
 </script>
