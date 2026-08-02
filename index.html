@@ -256,6 +256,12 @@ main{
 .debt-buckets{ margin-top:2px; }
 .promo-row{ padding-bottom:10px; margin-bottom:10px; border-bottom:1px dashed rgba(26,26,46,0.25); }
 .promo-row:last-child{ border-bottom:none; margin-bottom:0; }
+#promoRows.multi .promo-row{
+  border: 1.5px solid var(--ink); border-radius:12px;
+  padding:12px; margin-bottom:12px;
+}
+#promoRows.multi .promo-row:last-child{ margin-bottom:12px; }
+.promo-title{ font-size:12px; font-weight:bold; letter-spacing:1px; opacity:0.65; margin-bottom:8px; }
 .remove-row-btn{
   background:none; border:none; padding:2px 0; color:var(--danger); text-decoration:underline;
   text-underline-offset:3px; font-size:12px; cursor:pointer;
@@ -548,7 +554,11 @@ function spendableCash(){
 }
 function excludedAccounts(){ return DATA.accounts.filter(function(a){ return a.excluded; }); }
 
-function billAmount(b){ return b.payMode === 'min' ? num(b.amountMin) : num(b.amountFull); }
+function billAmount(b){
+  if(b.payMode === 'min') return num(b.amountMin);
+  if(b.payMode === 'custom') return num(b.customAmount);
+  return num(b.amountFull);
+}
 
 function debtTotalBalance(d){
   return (d.promos||[]).reduce(function(s,p){ return s + num(p.balance); }, 0);
@@ -962,114 +972,165 @@ document.getElementById('modalOverlay').addEventListener('click', function(e){
 });
 
 var BILL_TYPES = [
-  ['general','General'], ['rent','Rent / Mortgage'], ['utility','Utility'],
+  ['general','General'], ['rent','Rent'], ['mortgage','Mortgage'], ['utility','Utility'],
   ['subscription','Subscription'], ['insurance','Insurance'],
   ['creditCard','Credit Card'], ['loan','Loan'], ['other','Other']
 ];
-function isDebtBillType(type){ return type === 'creditCard' || type === 'loan'; }
+function isDebtBillType(type){ return type === 'creditCard' || type === 'loan' || type === 'mortgage'; }
 
 function billFormHtml(b){
   b = b || {};
   var recurring = b.recurring !== false;
   var type = b.type || 'general';
+  var isDebt = isDebtBillType(type);
   var typeOptions = BILL_TYPES.map(function(t){
     return '<option value="'+t[0]+'" '+(type===t[0]?'selected':'')+'>'+t[1]+'</option>';
   }).join('');
   var linkedDebt = b.linkedDebtId ? DATA.debts.find(function(d){ return d.id === b.linkedDebtId; }) : null;
   var promos = (linkedDebt && linkedDebt.promos && linkedDebt.promos.length) ? linkedDebt.promos : [{ balance: b.amountFull }];
-  var bucketRowsHtml = promos.map(debtPromoRowHtml).join('');
-  return '<div class="form">' +
+
+  var minAmountFieldHtml = '<div class="form-row"><label>MIN AMOUNT</label><input type="number" step="0.01" id="f-bill-min" value="'+(b.amountMin!=null?b.amountMin:'')+'" placeholder="0.00"></div>';
+  var fullAmountFieldHtml = '<div class="form-row" id="row-bill-full" style="display:'+(isDebt?'none':'block')+';"><label>FULL AMOUNT</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>';
+
+  var bucketRowsHtml = promos.map(function(p, idx){
+    return debtPromoRowHtml(p, idx, (isDebt && idx===0) ? minAmountFieldHtml : '');
+  }).join('');
+
+  var payMode = b.payMode || 'full';
+
+  var html = '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-bill-name" value="'+escapeHtml(b.name||'')+'" placeholder="e.g. Mortgage"></div>' +
     '<div class="form-row"><label>TYPE</label><select id="f-bill-type">'+typeOptions+'</select></div>' +
-    '<div id="bill-debt-section" style="display:'+(isDebtBillType(type)?'block':'none')+';">' +
+    '<div id="bill-debt-section" style="display:'+(isDebt?'block':'none')+';">' +
       '<div class="section-title" style="font-size:13px; letter-spacing:1px; margin-top:2px; padding-bottom:4px;">DEBT DETAILS</div>' +
       '<div id="promoRows">' + bucketRowsHtml + '</div>' +
       '<button type="button" class="add-btn" id="addPromoRowBtn">+ Add another balance / promo</button>' +
     '</div>' +
-    '<div class="form-row"><label>FULL AMOUNT</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>' +
-    '<div class="form-row"><label>MIN AMOUNT</label><input type="number" step="0.01" id="f-bill-min" value="'+(b.amountMin!=null?b.amountMin:'')+'" placeholder="0.00"></div>' +
+    fullAmountFieldHtml +
+    (isDebt ? '' : minAmountFieldHtml) +
     '<div class="form-row"><label>DUE DATE</label><input type="date" id="f-bill-due" value="'+(b.dueDate||'')+'"></div>' +
     '<div class="form-row"><label>PAY MODE</label>' +
-      '<select id="f-bill-mode"><option value="full" '+(b.payMode!=='min'?'selected':'')+'>Full</option><option value="min" '+(b.payMode==='min'?'selected':'')+'>Minimum</option></select>' +
+      '<select id="f-bill-mode">' +
+        '<option value="full" '+(payMode==='full'?'selected':'')+'>Full</option>' +
+        '<option value="min" '+(payMode==='min'?'selected':'')+'>Minimum</option>' +
+        '<option value="custom" '+(payMode==='custom'?'selected':'')+'>Custom</option>' +
+      '</select>' +
     '</div>' +
+    '<div class="form-row" id="row-bill-custom" style="display:'+(payMode==='custom'?'block':'none')+';"><label>CUSTOM AMOUNT</label><input type="number" step="0.01" id="f-bill-custom" value="'+(b.customAmount!=null?b.customAmount:'')+'" placeholder="0.00"></div>' +
     '<div class="form-row"><label>REPEATS</label>' +
       '<select id="f-bill-recurring"><option value="yes" '+(recurring?'selected':'')+'>Recurring — rolls to next month when paid</option><option value="no" '+(!recurring?'selected':'')+'>One-time — doesn’t roll over</option></select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-paid" '+(b.paid?'checked':'')+' style="width:auto;"> Paid</label></div>' +
-    '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(b.linkedDebtId?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' +
+    (isDebt ? '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(b.linkedDebtId?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' : '') +
     '<div class="form-actions">' +
       '<button class="btn" id="f-bill-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-bill-cancel" type="button">Cancel</button>' +
     '</div>' +
   '</div>';
+  return html;
 }
 
 function openBillForm(existing){
   var isModal = true;
   var formEl = document.getElementById('modalCard');
-  formEl.innerHTML = billFormHtml(existing);
-  document.getElementById('modalOverlay').classList.add('open');
 
-  document.getElementById('f-bill-type').addEventListener('change', function(){
-    document.getElementById('bill-debt-section').style.display = isDebtBillType(this.value) ? 'block' : 'none';
-  });
-  document.getElementById('addPromoRowBtn').addEventListener('click', function(){
-    var wrap = document.createElement('div');
-    wrap.innerHTML = debtPromoRowHtml({});
-    document.getElementById('promoRows').appendChild(wrap.firstChild);
-  });
+  function render(dataForForm){
+    formEl.innerHTML = billFormHtml(dataForForm);
+    document.getElementById('modalOverlay').classList.add('open');
+    wire();
+    refreshPromoRowsUI();
+  }
 
-  document.getElementById('f-bill-save').addEventListener('click', function(){
-    var name = document.getElementById('f-bill-name').value.trim();
-    if(!name) return;
-    var type = document.getElementById('f-bill-type').value;
-    var full = num(document.getElementById('f-bill-full').value);
-    var min = num(document.getElementById('f-bill-min').value);
-    var due = document.getElementById('f-bill-due').value;
-    var mode = document.getElementById('f-bill-mode').value;
-    var recurring = document.getElementById('f-bill-recurring').value === 'yes';
-    var paid = document.getElementById('f-bill-paid').checked;
-    var asDebt = document.getElementById('f-bill-asdebt').checked;
-    var promoRows = document.querySelectorAll('#promoRows .promo-row');
-    var promos = Array.prototype.map.call(promoRows, function(row){
-      var balance = num(row.querySelector('.f-debt-bal').value);
-      var aprRaw = row.querySelector('.f-debt-apr').value;
-      var apr = aprRaw === '' ? null : num(aprRaw);
-      var promoType = row.querySelector('.f-debt-promo').value;
-      var deadline = row.querySelector('.f-debt-deadline').value || null;
-      var revertRaw = row.querySelector('.f-debt-revert').value;
-      var revert = revertRaw === '' ? null : num(revertRaw);
-      return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+  function wire(){
+    document.getElementById('f-bill-type').addEventListener('change', function(){
+      var merged = {
+        name: document.getElementById('f-bill-name').value,
+        type: this.value,
+        amountFull: document.getElementById('f-bill-full').value,
+        amountMin: document.getElementById('f-bill-min').value,
+        dueDate: document.getElementById('f-bill-due').value,
+        payMode: document.getElementById('f-bill-mode').value,
+        customAmount: document.getElementById('f-bill-custom').value,
+        recurring: document.getElementById('f-bill-recurring').value === 'yes',
+        paid: document.getElementById('f-bill-paid').checked,
+        linkedDebtId: existing ? existing.linkedDebtId : null
+      };
+      render(merged);
     });
-    var bill;
-    if(existing){
-      existing.name=name; existing.type=type; existing.amountFull=full; existing.amountMin=min;
-      existing.dueDate=due; existing.payMode=mode; existing.recurring=recurring; existing.paid=paid;
-      bill = existing;
-    } else {
-      bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
-      DATA.bills.push(bill);
-    }
-    if(asDebt && isDebtBillType(type)){
-      if(bill.linkedDebtId){
-        var linkedDebt = DATA.debts.find(function(d){ return d.id === bill.linkedDebtId; });
-        if(linkedDebt){ linkedDebt.name = name; linkedDebt.promos = promos; }
+
+    document.getElementById('addPromoRowBtn').addEventListener('click', function(){
+      var wrap = document.createElement('div');
+      wrap.innerHTML = debtPromoRowHtml({});
+      document.getElementById('promoRows').appendChild(wrap.firstChild);
+      refreshPromoRowsUI();
+    });
+
+    document.getElementById('f-bill-mode').addEventListener('change', function(){
+      document.getElementById('row-bill-custom').style.display = (this.value === 'custom') ? 'block' : 'none';
+    });
+
+    document.getElementById('f-bill-save').addEventListener('click', function(){
+      var name = document.getElementById('f-bill-name').value.trim();
+      if(!name) return;
+      var type = document.getElementById('f-bill-type').value;
+      var isDebt = isDebtBillType(type);
+      var min = num(document.getElementById('f-bill-min').value);
+      var due = document.getElementById('f-bill-due').value;
+      var mode = document.getElementById('f-bill-mode').value;
+      var customRaw = document.getElementById('f-bill-custom').value;
+      var customAmount = customRaw === '' ? null : num(customRaw);
+      var recurring = document.getElementById('f-bill-recurring').value === 'yes';
+      var paid = document.getElementById('f-bill-paid').checked;
+      var asDebtEl = document.getElementById('f-bill-asdebt');
+      var asDebt = asDebtEl ? asDebtEl.checked : false;
+
+      var promoRows = document.querySelectorAll('#promoRows .promo-row');
+      var promos = Array.prototype.map.call(promoRows, function(row){
+        var balance = num(row.querySelector('.f-debt-bal').value);
+        var aprRaw = row.querySelector('.f-debt-apr').value;
+        var apr = aprRaw === '' ? null : num(aprRaw);
+        var promoType = row.querySelector('.f-debt-promo').value;
+        var deadline = row.querySelector('.f-debt-deadline').value || null;
+        var revertRaw = row.querySelector('.f-debt-revert').value;
+        var revert = revertRaw === '' ? null : num(revertRaw);
+        return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+      });
+
+      var full = (isDebt && promos.length === 1) ? promos[0].balance : num(document.getElementById('f-bill-full').value);
+
+      var bill;
+      if(existing){
+        existing.name=name; existing.type=type; existing.amountFull=full; existing.amountMin=min;
+        existing.dueDate=due; existing.payMode=mode; existing.customAmount=customAmount;
+        existing.recurring=recurring; existing.paid=paid;
+        bill = existing;
       } else {
-        var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
-        var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id, promos:promos };
-        DATA.debts.push(newDebt);
-        bill.linkedDebtId = newDebt.id;
+        bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, customAmount:customAmount, recurring:recurring, paid:paid, linkedDebtId:null };
+        DATA.bills.push(bill);
       }
-      tryAutoSuggest();
-    } else if(!asDebt && bill.linkedDebtId){
-      bill.linkedDebtId = null;
-    }
-    if(isModal){ closeModal(); } else { closeForm('billForm'); }
-    save();
-  });
-  document.getElementById('f-bill-cancel').addEventListener('click', function(){
-    if(isModal){ closeModal(); } else { closeForm('billForm'); }
-  });
+      if(asDebt && isDebt){
+        if(bill.linkedDebtId){
+          var linkedDebt = DATA.debts.find(function(d){ return d.id === bill.linkedDebtId; });
+          if(linkedDebt){ linkedDebt.name = name; linkedDebt.promos = promos; }
+        } else {
+          var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
+          var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id, promos:promos };
+          DATA.debts.push(newDebt);
+          bill.linkedDebtId = newDebt.id;
+        }
+        tryAutoSuggest();
+      } else if(!asDebt && bill.linkedDebtId){
+        bill.linkedDebtId = null;
+      }
+      if(isModal){ closeModal(); } else { closeForm('billForm'); }
+      save();
+    });
+    document.getElementById('f-bill-cancel').addEventListener('click', function(){
+      if(isModal){ closeModal(); } else { closeForm('billForm'); }
+    });
+  }
+
+  render(existing);
   bindEnterToSave(formEl, 'f-bill-save', function(){ openBillForm(null); }, existing);
 }
 
@@ -1122,11 +1183,13 @@ function openIncomeForm(existing){
   bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
 }
 
-function debtPromoRowHtml(p){
+function debtPromoRowHtml(p, idx, extraAfterBalance){
   p = p || {};
   var promo = p.promoType || 'none';
   return '<div class="promo-row">' +
+    '<div class="promo-title" style="display:none;">Promo ' + ((idx||0)+1) + '</div>' +
     '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" class="f-debt-bal" value="'+(p.balance!=null?p.balance:'')+'" placeholder="0.00"></div>' +
+    (extraAfterBalance || '') +
     '<div class="form-row"><label>APR (used if no promo &mdash; leave blank if unknown)</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
     '<div class="form-row"><label>PROMO TYPE</label>' +
       '<select class="f-debt-promo">' +
@@ -1137,8 +1200,33 @@ function debtPromoRowHtml(p){
     '</div>' +
     '<div class="form-row"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
     '<div class="form-row"><label>REVERT APR (after promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
-    '<button type="button" class="remove-row-btn">Remove this balance / promo</button>' +
+    '<button type="button" class="remove-row-btn" style="display:none;">Remove this balance / promo</button>' +
   '</div>';
+}
+
+function refreshPromoRowsUI(){
+  var container = document.getElementById('promoRows');
+  if(!container) return;
+  var typeEl = document.getElementById('f-bill-type');
+  var fullRow = document.getElementById('row-bill-full');
+  if(typeEl && !isDebtBillType(typeEl.value)){
+    if(fullRow) fullRow.style.display = 'block';
+    return; // non-debt bill type: bucket rows exist in the DOM but stay hidden under bill-debt-section
+  }
+  var rows = container.querySelectorAll('.promo-row');
+  if(!rows.length) return;
+  var multi = rows.length > 1;
+  container.classList.toggle('multi', multi);
+  rows.forEach(function(row, i){
+    var removeBtn = row.querySelector('.remove-row-btn');
+    if(removeBtn) removeBtn.style.display = multi ? 'inline-block' : 'none';
+    var title = row.querySelector('.promo-title');
+    if(title){
+      title.style.display = multi ? 'block' : 'none';
+      title.textContent = 'Promo ' + (i+1);
+    }
+  });
+  if(fullRow) fullRow.style.display = multi ? 'block' : 'none';
 }
 
 function debtFormHtml(d){
@@ -1146,7 +1234,7 @@ function debtFormHtml(d){
   var promos = (d.promos && d.promos.length) ? d.promos : [{}];
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-debt-name" value="'+escapeHtml(d.name||'')+'" placeholder="e.g. Store card"></div>' +
-    '<div id="promoRows">' + promos.map(debtPromoRowHtml).join('') + '</div>' +
+    '<div id="promoRows">' + promos.map(function(p, idx){ return debtPromoRowHtml(p, idx); }).join('') + '</div>' +
     '<button type="button" class="add-btn" id="addPromoRowBtn">+ Add another balance / promo</button>' +
     '<div class="form-actions" style="margin-top:14px;">' +
       '<button class="btn" id="f-debt-save" type="button">Save</button>' +
@@ -1160,11 +1248,13 @@ function openDebtForm(existing){
   var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('debtForm');
   formEl.innerHTML = debtFormHtml(existing);
   if(isModal) document.getElementById('modalOverlay').classList.add('open');
+  refreshPromoRowsUI();
 
   document.getElementById('addPromoRowBtn').addEventListener('click', function(){
     var wrap = document.createElement('div');
     wrap.innerHTML = debtPromoRowHtml({});
     document.getElementById('promoRows').appendChild(wrap.firstChild);
+    refreshPromoRowsUI();
   });
 
   document.getElementById('f-debt-save').addEventListener('click', function(){
@@ -1254,7 +1344,7 @@ document.body.addEventListener('click', function(e){
   var removeRowBtn = e.target.closest('.remove-row-btn');
   if(removeRowBtn){
     var rows = document.querySelectorAll('#promoRows .promo-row');
-    if(rows.length > 1) removeRowBtn.closest('.promo-row').remove();
+    if(rows.length > 1){ removeRowBtn.closest('.promo-row').remove(); refreshPromoRowsUI(); }
     return;
   }
 
