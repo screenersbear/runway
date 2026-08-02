@@ -410,13 +410,12 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <section id="screen-priority" class="screen">
 
       <div class="section-title">PAYOFF PRIORITY</div>
-      <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always.</p>
+      <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always. New debts come from Bills &mdash; set a bill's type to Credit Card or Loan and check "Also track as debt."</p>
 
       <button class="add-btn" id="suggestOrderBtn" type="button" style="border-bottom:1.5px solid var(--rule-solid); color:var(--rule-solid);">Suggest order</button>
       <div class="warning" id="priority-stale-notice" style="display:none; cursor:pointer;">Priority order may be out of date &mdash; a deadline has shifted since you last suggested an order. Tap here to refresh it.</div>
 
       <div id="debts-list" class="list" style="margin-top:6px;"></div>
-      <button class="add-btn" id="addDebtBtn" type="button">+ Add debt</button>
       <div id="debtForm"></div>
 
       <div class="reminder">Minimums on every bill come first &mdash; avoiding late fees beats optimizing interest. Whatever's left over after that goes to rank #1 above.</div>
@@ -976,10 +975,17 @@ function billFormHtml(b){
   var typeOptions = BILL_TYPES.map(function(t){
     return '<option value="'+t[0]+'" '+(type===t[0]?'selected':'')+'>'+t[1]+'</option>';
   }).join('');
+  var linkedDebt = b.linkedDebtId ? DATA.debts.find(function(d){ return d.id === b.linkedDebtId; }) : null;
+  var promos = (linkedDebt && linkedDebt.promos && linkedDebt.promos.length) ? linkedDebt.promos : [{ balance: b.amountFull }];
+  var bucketRowsHtml = promos.map(debtPromoRowHtml).join('');
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-bill-name" value="'+escapeHtml(b.name||'')+'" placeholder="e.g. Mortgage"></div>' +
     '<div class="form-row"><label>TYPE</label><select id="f-bill-type">'+typeOptions+'</select></div>' +
-    '<div class="form-row" id="row-bill-apr" style="display:'+(isDebtBillType(type)?'block':'none')+';"><label>APR (interest rate)</label><input type="number" step="0.01" id="f-bill-apr" value="'+(b.apr!=null?b.apr:'')+'" placeholder="e.g. 24.99"></div>' +
+    '<div id="bill-debt-section" style="display:'+(isDebtBillType(type)?'block':'none')+';">' +
+      '<div class="section-title" style="font-size:13px; letter-spacing:1px; margin-top:2px; padding-bottom:4px;">DEBT DETAILS</div>' +
+      '<div id="promoRows">' + bucketRowsHtml + '</div>' +
+      '<button type="button" class="add-btn" id="addPromoRowBtn">+ Add another balance / promo</button>' +
+    '</div>' +
     '<div class="form-row"><label>FULL AMOUNT</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>' +
     '<div class="form-row"><label>MIN AMOUNT</label><input type="number" step="0.01" id="f-bill-min" value="'+(b.amountMin!=null?b.amountMin:'')+'" placeholder="0.00"></div>' +
     '<div class="form-row"><label>DUE DATE</label><input type="date" id="f-bill-due" value="'+(b.dueDate||'')+'"></div>' +
@@ -1005,7 +1011,12 @@ function openBillForm(existing){
   document.getElementById('modalOverlay').classList.add('open');
 
   document.getElementById('f-bill-type').addEventListener('change', function(){
-    document.getElementById('row-bill-apr').style.display = isDebtBillType(this.value) ? 'block' : 'none';
+    document.getElementById('bill-debt-section').style.display = isDebtBillType(this.value) ? 'block' : 'none';
+  });
+  document.getElementById('addPromoRowBtn').addEventListener('click', function(){
+    var wrap = document.createElement('div');
+    wrap.innerHTML = debtPromoRowHtml({});
+    document.getElementById('promoRows').appendChild(wrap.firstChild);
   });
 
   document.getElementById('f-bill-save').addEventListener('click', function(){
@@ -1019,23 +1030,36 @@ function openBillForm(existing){
     var recurring = document.getElementById('f-bill-recurring').value === 'yes';
     var paid = document.getElementById('f-bill-paid').checked;
     var asDebt = document.getElementById('f-bill-asdebt').checked;
-    var aprRaw = document.getElementById('f-bill-apr').value;
-    var apr = (isDebtBillType(type) && aprRaw !== '') ? num(aprRaw) : null;
+    var promoRows = document.querySelectorAll('#promoRows .promo-row');
+    var promos = Array.prototype.map.call(promoRows, function(row){
+      var balance = num(row.querySelector('.f-debt-bal').value);
+      var aprRaw = row.querySelector('.f-debt-apr').value;
+      var apr = aprRaw === '' ? null : num(aprRaw);
+      var promoType = row.querySelector('.f-debt-promo').value;
+      var deadline = row.querySelector('.f-debt-deadline').value || null;
+      var revertRaw = row.querySelector('.f-debt-revert').value;
+      var revert = revertRaw === '' ? null : num(revertRaw);
+      return { id: uid(), balance:balance, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+    });
     var bill;
     if(existing){
-      existing.name=name; existing.type=type; existing.apr=apr; existing.amountFull=full; existing.amountMin=min;
+      existing.name=name; existing.type=type; existing.amountFull=full; existing.amountMin=min;
       existing.dueDate=due; existing.payMode=mode; existing.recurring=recurring; existing.paid=paid;
       bill = existing;
     } else {
-      bill = { id:uid(), name:name, type:type, apr:apr, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
+      bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, recurring:recurring, paid:paid, linkedDebtId:null };
       DATA.bills.push(bill);
     }
-    if(asDebt && !bill.linkedDebtId){
-      var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
-      var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id,
-        promos:[{ id:uid(), balance:full, apr:apr, promoType:'none', promoDeadline:null, revertApr:null }] };
-      DATA.debts.push(newDebt);
-      bill.linkedDebtId = newDebt.id;
+    if(asDebt && isDebtBillType(type)){
+      if(bill.linkedDebtId){
+        var linkedDebt = DATA.debts.find(function(d){ return d.id === bill.linkedDebtId; });
+        if(linkedDebt){ linkedDebt.name = name; linkedDebt.promos = promos; }
+      } else {
+        var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
+        var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id, promos:promos };
+        DATA.debts.push(newDebt);
+        bill.linkedDebtId = newDebt.id;
+      }
       tryAutoSuggest();
     } else if(!asDebt && bill.linkedDebtId){
       bill.linkedDebtId = null;
@@ -1177,7 +1201,6 @@ function openDebtForm(existing){
 document.getElementById('rw-addAccountBtn').addEventListener('click', function(){ openAccountForm(null); });
 document.getElementById('addBillBtn').addEventListener('click', function(){ openBillForm(null); });
 document.getElementById('addIncomeBtn').addEventListener('click', function(){ openIncomeForm(null); });
-document.getElementById('addDebtBtn').addEventListener('click', function(){ openDebtForm(null); });
 
 document.getElementById('rw-windowDays').addEventListener('change', function(e){
   DATA.billWindowDays = Math.max(1, Math.round(num(e.target.value)) || 30);
