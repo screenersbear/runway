@@ -272,7 +272,13 @@ main{
   border: 1.5px solid var(--ink); border-radius:12px;
   padding:12px; margin-bottom:12px;
 }
-.promo-title{ font-size:12px; font-weight:bold; letter-spacing:1px; opacity:0.65; margin-bottom:8px; }
+.promo-title-input{
+  display:block; width:100%; font-size:12px; font-weight:bold; letter-spacing:1px; color:var(--ink);
+  background:none; border:none; border-bottom:1px dashed rgba(26,26,46,0.35);
+  padding:2px 0 4px 0; margin-bottom:10px;
+}
+.promo-title-input::placeholder{ color:var(--ink); opacity:0.65; font-weight:bold; }
+.promo-title-input:focus{ outline:none; border-bottom-color:var(--rule-solid); }
 .remove-row-btn{
   background:none; border:none; padding:2px 0; color:var(--danger); text-decoration:underline;
   text-underline-offset:3px; font-size:12px; cursor:pointer;
@@ -935,6 +941,7 @@ function renderPriority(){
       baseLine = '<div class="debt-signals">' + fmt(baseAmt) + ' — ' + baseAprText + '</div>';
     }
     var buckets = (d.promos||[]).map(function(p){
+      var namePrefix = p.name ? '<strong>' + escapeHtml(p.name) + ':</strong> ' : '';
       if(p.promoType && p.promoType !== 'none'){
         var label = p.promoType === 'zeroPct' ? '0%' : 'deferred interest';
         var dl = p.promoDeadline;
@@ -943,11 +950,11 @@ function renderPriority(){
         var revertTxt = p.promoType === 'zeroPct'
           ? (p.revertApr !== null && p.revertApr !== undefined && p.revertApr !== '' ? ' — reverts to ' + num(p.revertApr).toFixed(2) + '% on ' + (dl?fmtDate(dl):'?') : (dl ? ' — reverts on ' + fmtDate(dl) : ''))
           : (' — $' + num(p.amount).toFixed(2) + ' detonates on ' + (dl?fmtDate(dl):'?'));
-        return '<div class="debt-signals' + (urgent?' urgent':'') + '">' + fmt(p.amount) + ' — ' + label + revertTxt +
+        return '<div class="debt-signals' + (urgent?' urgent':'') + '">' + namePrefix + fmt(p.amount) + ' — ' + label + revertTxt +
           (urgent ? ' &middot; <strong>' + (dDays<0? 'OVERDUE':(dDays+'d left')) + '</strong>' : '') + '</div>';
       }
       var aprText = (p.apr === null || p.apr === undefined || p.apr === '') ? 'APR unknown — add it' : (num(p.apr).toFixed(2) + '% APR');
-      return '<div class="debt-signals">' + fmt(p.amount) + ' — ' + aprText + '</div>';
+      return '<div class="debt-signals">' + namePrefix + fmt(p.amount) + ' — ' + aprText + '</div>';
     }).join('');
     return '<div class="debt-row" data-id="'+d.id+'">' +
       '<div class="debt-top">' +
@@ -1220,6 +1227,7 @@ function openBillForm(existing){
 
       var promoRows = document.querySelectorAll('#promoRows .promo-row');
       var promos = Array.prototype.map.call(promoRows, function(row){
+        var name = row.querySelector('.promo-title-input').value.trim();
         var amount = num(row.querySelector('.f-debt-bal').value);
         var aprRaw = row.querySelector('.f-debt-apr').value;
         var apr = aprRaw === '' ? null : num(aprRaw);
@@ -1227,7 +1235,7 @@ function openBillForm(existing){
         var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
         var revertRaw = row.querySelector('.f-debt-revert').value;
         var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-        return { id: uid(), amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+        return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
       });
 
       var full = num(document.getElementById('f-bill-full').value);
@@ -1325,7 +1333,7 @@ function debtPromoRowHtml(p, idx){
   var promo = p.promoType || 'none';
   var hasPromo = promo !== 'none';
   return '<div class="promo-row">' +
-    '<div class="promo-title">Promo ' + ((idx||0)+1) + '</div>' +
+    '<input type="text" class="promo-title-input" value="'+escapeHtml(p.name||'')+'" placeholder="Promo ' + ((idx||0)+1) + '">' +
     '<div class="form-row">' +
       '<label>AMOUNT</label>' +
       '<input type="number" step="0.01" class="f-debt-bal" value="'+(p.amount!=null?p.amount:'')+'" placeholder="0.00">' +
@@ -1370,8 +1378,8 @@ function refreshPromoRowsUI(){
   if(!container) return;
   var rows = container.querySelectorAll('.promo-row');
   rows.forEach(function(row, i){
-    var title = row.querySelector('.promo-title');
-    if(title) title.textContent = 'Promo ' + (i+1);
+    var titleInput = row.querySelector('.promo-title-input');
+    if(titleInput) titleInput.placeholder = 'Promo ' + (i+1);
   });
   refreshBucketSumWarning();
 }
@@ -1415,6 +1423,7 @@ function openDebtForm(existing){
     var aprTop = aprRawTop === '' ? null : num(aprRawTop);
     var rows = document.querySelectorAll('#promoRows .promo-row');
     var promos = Array.prototype.map.call(rows, function(row){
+      var name = row.querySelector('.promo-title-input').value.trim();
       var amount = num(row.querySelector('.f-debt-bal').value);
       var aprRaw = row.querySelector('.f-debt-apr').value;
       var apr = aprRaw === '' ? null : num(aprRaw);
@@ -1422,7 +1431,7 @@ function openDebtForm(existing){
       var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
       var revertRaw = row.querySelector('.f-debt-revert').value;
       var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-      return { id: uid(), amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+      return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
     });
     if(existing){
       existing.name = name; existing.apr = aprTop; existing.promos = promos;
@@ -1554,6 +1563,9 @@ document.body.addEventListener('change', function(e){
     var hasPromo = e.target.value !== 'none';
     row.querySelector('.promo-deadline-row').style.display = hasPromo ? 'block' : 'none';
     row.querySelector('.promo-revert-row').style.display = hasPromo ? 'block' : 'none';
+    if(e.target.value === 'zeroPct' || e.target.value === 'deferredInterest'){
+      row.querySelector('.f-debt-apr').value = '0';
+    }
   }
 });
 
