@@ -272,13 +272,20 @@ main{
   border: 1.5px solid var(--ink); border-radius:12px;
   padding:12px; margin-bottom:12px;
 }
+.promo-row-header{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .promo-title-input{
-  display:block; width:100%; font-size:12px; font-weight:bold; letter-spacing:1px; color:var(--ink);
+  flex:1; min-width:0; font-size:12px; font-weight:bold; letter-spacing:1px; color:var(--ink);
   background:none; border:none; border-bottom:1px dashed rgba(26,26,46,0.35);
-  padding:2px 0 4px 0; margin-bottom:10px;
+  padding:2px 0 4px 0; margin-bottom:0;
 }
 .promo-title-input::placeholder{ color:var(--ink); opacity:0.65; font-weight:bold; }
 .promo-title-input:focus{ outline:none; border-bottom-color:var(--rule-solid); }
+.promo-collapse-btn{
+  flex-shrink:0; background:none; border:none; font-size:13px; opacity:0.6; cursor:pointer; padding:2px 4px;
+}
+.promo-collapse-btn:active{ opacity:1; }
+.promo-row-summary{ font-size:13px; opacity:0.75; margin-bottom:2px; }
+.promo-row-body.collapsed{ display:none; }
 .remove-row-btn{
   background:none; border:none; padding:2px 0; color:var(--danger); text-decoration:underline;
   text-underline-offset:3px; font-size:12px; cursor:pointer;
@@ -1328,28 +1335,42 @@ function openIncomeForm(existing){
   bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
 }
 
+function promoSummaryText(p){
+  var promo = p.promoType || 'none';
+  if(promo === 'zeroPct') return fmt(p.amount) + ' — 0% intro';
+  if(promo === 'deferredInterest') return fmt(p.amount) + ' — deferred interest';
+  return fmt(p.amount) + (p.apr!=null && p.apr!=='' ? ' — '+num(p.apr).toFixed(2)+'% APR' : '');
+}
+
 function debtPromoRowHtml(p, idx){
   p = p || {};
   var promo = p.promoType || 'none';
   var hasPromo = promo !== 'none';
+  var collapsed = !!p.id;
   return '<div class="promo-row">' +
-    '<input type="text" class="promo-title-input" value="'+escapeHtml(p.name||'')+'" placeholder="Promo ' + ((idx||0)+1) + '">' +
-    '<div class="form-row">' +
-      '<label>AMOUNT</label>' +
-      '<input type="number" step="0.01" class="f-debt-bal" value="'+(p.amount!=null?p.amount:'')+'" placeholder="0.00">' +
-      '<p class="hint" style="padding-top:2px;">Enter the full balance, or just a portion of it.</p>' +
+    '<div class="promo-row-header">' +
+      '<input type="text" class="promo-title-input" value="'+escapeHtml(p.name||'')+'" placeholder="Promo ' + ((idx||0)+1) + '">' +
+      '<button type="button" class="promo-collapse-btn">' + (collapsed ? '&#9656;' : '&#9662;') + '</button>' +
     '</div>' +
-    '<div class="form-row"><label>PROMO TYPE</label>' +
-      '<select class="f-debt-promo">' +
-        '<option value="none" '+(promo==='none'?'selected':'')+'>None</option>' +
-        '<option value="zeroPct" '+(promo==='zeroPct'?'selected':'')+'>0% intro</option>' +
-        '<option value="deferredInterest" '+(promo==='deferredInterest'?'selected':'')+'>Deferred interest</option>' +
-      '</select>' +
+    '<div class="promo-row-summary" style="display:'+(collapsed?'block':'none')+';">' + promoSummaryText(p) + '</div>' +
+    '<div class="promo-row-body'+(collapsed?' collapsed':'')+'">' +
+      '<div class="form-row">' +
+        '<label>AMOUNT</label>' +
+        '<input type="number" step="0.01" class="f-debt-bal" value="'+(p.amount!=null?p.amount:'')+'" placeholder="0.00">' +
+        '<p class="hint" style="padding-top:2px;">Enter the full balance, or just a portion of it.</p>' +
+      '</div>' +
+      '<div class="form-row"><label>PROMO TYPE</label>' +
+        '<select class="f-debt-promo">' +
+          '<option value="none" '+(promo==='none'?'selected':'')+'>None</option>' +
+          '<option value="zeroPct" '+(promo==='zeroPct'?'selected':'')+'>0% intro</option>' +
+          '<option value="deferredInterest" '+(promo==='deferredInterest'?'selected':'')+'>Deferred interest</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="form-row"><label>APR</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
+      '<div class="form-row promo-deadline-row" style="display:'+(hasPromo?'block':'none')+';"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
+      '<div class="form-row promo-revert-row" style="display:'+(hasPromo?'block':'none')+';"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
+      '<button type="button" class="remove-row-btn">Remove this promo</button>' +
     '</div>' +
-    '<div class="form-row"><label>APR</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
-    '<div class="form-row promo-deadline-row" style="display:'+(hasPromo?'block':'none')+';"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
-    '<div class="form-row promo-revert-row" style="display:'+(hasPromo?'block':'none')+';"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
-    '<button type="button" class="remove-row-btn">Remove this promo</button>' +
   '</div>';
 }
 
@@ -1503,6 +1524,25 @@ document.getElementById('priority-stale-notice').addEventListener('click', funct
 });
 
 document.body.addEventListener('click', function(e){
+  var collapseBtn = e.target.closest('.promo-collapse-btn');
+  if(collapseBtn){
+    var promoRow = collapseBtn.closest('.promo-row');
+    var body = promoRow.querySelector('.promo-row-body');
+    var summary = promoRow.querySelector('.promo-row-summary');
+    var nowCollapsed = !body.classList.contains('collapsed');
+    body.classList.toggle('collapsed', nowCollapsed);
+    collapseBtn.innerHTML = nowCollapsed ? '&#9656;' : '&#9662;';
+    if(nowCollapsed){
+      summary.textContent = promoSummaryText({
+        amount: num(promoRow.querySelector('.f-debt-bal').value),
+        apr: promoRow.querySelector('.f-debt-apr').value,
+        promoType: promoRow.querySelector('.f-debt-promo').value
+      });
+    }
+    summary.style.display = nowCollapsed ? 'block' : 'none';
+    return;
+  }
+
   var removeRowBtn = e.target.closest('.remove-row-btn');
   if(removeRowBtn){
     removeRowBtn.closest('.promo-row').remove();
