@@ -22,6 +22,7 @@
   --rule-solid:#466ec8;
   --danger:#d34b4b;
   --success:#2f7a3d;
+  --amber:#b8790f;
   --row: 28px;
   --margin-x: 40px;
 }
@@ -222,6 +223,8 @@ main{
 .badge.due-soon{ color:var(--danger); border-color:var(--danger); }
 .badge.urgent{ color:var(--danger); border-color:var(--danger); }
 .badge.onetime{ color:var(--ink); opacity:0.55; }
+.badge.bomb{ color:var(--danger); border-color:var(--danger); background:rgba(211,75,75,0.08); }
+.badge.reverts{ color:var(--amber); border-color:var(--amber); }
 
 .paid-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; }
 .paid-check input{ width:16px; height:16px; }
@@ -301,6 +304,9 @@ main{
 .debt-name{ font-weight:bold; flex:1; }
 .debt-signals{ font-size:12.5px; line-height:18px; margin-top:4px; opacity:0.85; }
 .debt-signals.urgent{ color:var(--danger); font-weight:bold; opacity:1; }
+.debt-signals.warn{ color:var(--amber); font-weight:bold; opacity:1; }
+.priority-section-title{ font-size:13px; letter-spacing:1px; font-weight:bold; margin-top:16px; padding-bottom:4px; border-bottom:1px dashed rgba(26,26,46,0.3); }
+.priority-section-title:first-of-type{ margin-top:6px; }
 
 .reminder{ font-size:12px; line-height:17px; opacity:0.7; padding:10px 0; border-top:1px dashed rgba(26,26,46,0.3); margin-top:6px; }
 
@@ -447,13 +453,14 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always. New debts come from Bills &mdash; set a bill's type to Credit Card or Loan and check "Also track as debt."</p>
 
       <button class="add-btn" id="suggestOrderBtn" type="button">Suggest order</button>
-      <p class="hint">Debts with a promo deadline coming up within 90 days go first, soonest deadline first. Everything else is ordered by highest interest rate (APR) first.</p>
+      <p class="hint">Deadline Bombs (a deferred-interest or 0% promo) always come first, soonest deadline first &mdash; a deferred-interest deadline can trigger a retroactive lump, so date beats rate. Rate Debts (no promo) come after, highest APR first.</p>
       <div class="warning" id="priority-stale-notice" style="display:none; cursor:pointer;">Priority order may be out of date &mdash; a deadline has shifted since you last suggested an order. Tap here to refresh it.</div>
+      <div class="warning" id="priority-triage-note" style="display:none;"></div>
 
       <div id="debts-list" class="list" style="margin-top:6px;"></div>
       <div id="debtForm"></div>
 
-      <div class="reminder">Minimums on every bill come first &mdash; avoiding late fees beats optimizing interest. Whatever's left over after that goes to rank #1 above.</div>
+      <div class="reminder">Minimums on every bill come first &mdash; avoiding late fees beats optimizing interest. Whatever's left over after that goes to rank #1: the top Deadline Bomb, or the top Rate Debt if there are none.</div>
 
     </section>
 
@@ -653,15 +660,43 @@ function clearExpiredPromos(){
   return changed;
 }
 
-function debtMostUrgentDays(d){
-  var days = null;
-  (d.promos||[]).forEach(function(p){
-    if(p.promoType && p.promoType !== 'none' && p.promoDeadline){
-      var dd = daysUntil(p.promoDeadline);
-      if(dd <= 90 && (days === null || dd < days)) days = dd;
-    }
+function debtGroupAPromo(d){
+  var promos = (d.promos||[]).filter(function(p){ return p.promoType === 'deferredInterest' || p.promoType === 'zeroPct'; });
+  if(!promos.length) return null;
+  promos.sort(function(a,b){
+    var da = a.promoDeadline ? daysUntil(a.promoDeadline) : Infinity;
+    var db = b.promoDeadline ? daysUntil(b.promoDeadline) : Infinity;
+    return da - db;
   });
-  return days;
+  return promos[0];
+}
+function isGroupA(d){ return !!debtGroupAPromo(d); }
+
+function costOfMissingText(p){
+  if(!p) return '';
+  if(p.promoType === 'deferredInterest'){
+    return p.accruedInterest != null ? fmt(p.accruedInterest) + ' hits if late' : 'Interest amount unknown — add it';
+  }
+  if(p.promoType === 'zeroPct'){
+    return p.revertApr != null ? 'starts charging ' + num(p.revertApr).toFixed(2) + '% — no lump' : 'reverts to unknown rate — no lump';
+  }
+  return '';
+}
+
+function monthsUntilDeadline(dateStr){
+  if(!dateStr) return null;
+  var today = todayMid();
+  var parts = dateStr.split('-');
+  var y = Number(parts[0]), m = Number(parts[1])-1;
+  var months = (y*12+m) - (today.getFullYear()*12+today.getMonth());
+  return Math.max(months, 0);
+}
+
+function monthlyToClearText(p){
+  if(!p || !p.promoDeadline) return '';
+  var months = monthsUntilDeadline(p.promoDeadline);
+  if(months === 0) return 'pay ' + fmt(p.amount) + ' now — due this month';
+  return 'pay ' + fmt(Math.ceil(num(p.amount) / months)) + '/mo to clear in time';
 }
 
 function billsInWindow(days){
@@ -923,6 +958,101 @@ function priorityOrderIsStale(){
   return sorted.length > 1 && sorted.some(function(d, i){ return d.id !== suggested[i].id; });
 }
 
+function bombRowHtml(d, globalIdx, groupIdx, groupLen){
+  var promo = debtGroupAPromo(d);
+  var isBomb = promo.promoType === 'deferredInterest';
+  var badgeClass = isBomb ? 'bomb' : 'reverts';
+  var badgeText = isBomb
+    ? ('BOMB ' + (promo.accruedInterest!=null ? fmt(promo.accruedInterest) : '?'))
+    : ('REVERTS ' + (promo.revertApr!=null ? num(promo.revertApr).toFixed(2)+'%' : '?'));
+  var dl = promo.promoDeadline;
+  var dDays = dl ? daysUntil(dl) : null;
+  var escalation = dDays === null ? '' : (dDays < 60 ? 'urgent' : (dDays < 150 ? 'warn' : ''));
+  var deadlineText = dl
+    ? (fmtDate(dl) + (dDays !== null ? ' &middot; ' + (dDays<0 ? 'OVERDUE' : (dDays+'d left')) : ''))
+    : 'no deadline set — add one';
+  var costText = costOfMissingText(promo);
+  var clearText = monthlyToClearText(promo);
+  var namePart = promo.name ? escapeHtml(d.name) + ' <span class="muted">(' + escapeHtml(promo.name) + ')</span>' : escapeHtml(d.name);
+  return '<div class="debt-row" data-id="'+d.id+'">' +
+    '<div class="debt-top">' +
+      '<div class="debt-rank">' +
+        '<button data-act="rank-up" data-id="'+d.id+'" type="button" ' + (groupIdx===0?'disabled':'') + '>▲</button>' +
+        '<button data-act="rank-down" data-id="'+d.id+'" type="button" ' + (groupIdx===groupLen-1?'disabled':'') + '>▼</button>' +
+      '</div>' +
+      '<span class="debt-name">#' + (globalIdx+1) + ' ' + namePart + '</span>' +
+      '<span class="item-amt">' + fmt(debtTotalBalance(d)) + '</span>' +
+    '</div>' +
+    '<div class="debt-signals"><span class="badge '+badgeClass+'">'+badgeText+'</span></div>' +
+    '<div class="debt-signals'+(escalation?' '+escalation:'')+'">' + deadlineText + '</div>' +
+    (costText ? '<div class="debt-signals">' + costText + '</div>' : '') +
+    (clearText ? '<div class="debt-signals">' + clearText + '</div>' : '') +
+    '<div class="item-actions">' +
+      '<button data-act="edit-debt" data-id="'+d.id+'" type="button">edit</button>' +
+      '<button data-act="del-debt" data-id="'+d.id+'" type="button">delete</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function rateRowHtml(d, globalIdx, groupIdx, groupLen){
+  var apr = debtEffectiveApr(d);
+  var aprText = apr > 0 ? num(apr).toFixed(2)+'% APR' : 'APR unknown — add it';
+  return '<div class="debt-row" data-id="'+d.id+'">' +
+    '<div class="debt-top">' +
+      '<div class="debt-rank">' +
+        '<button data-act="rank-up" data-id="'+d.id+'" type="button" ' + (groupIdx===0?'disabled':'') + '>▲</button>' +
+        '<button data-act="rank-down" data-id="'+d.id+'" type="button" ' + (groupIdx===groupLen-1?'disabled':'') + '>▼</button>' +
+      '</div>' +
+      '<span class="debt-name">#' + (globalIdx+1) + ' ' + escapeHtml(d.name) + '</span>' +
+      '<span class="item-amt">' + fmt(debtTotalBalance(d)) + '</span>' +
+    '</div>' +
+    '<div class="debt-signals">' + aprText + '</div>' +
+    '<div class="item-actions">' +
+      '<button data-act="edit-debt" data-id="'+d.id+'" type="button">edit</button>' +
+      '<button data-act="del-debt" data-id="'+d.id+'" type="button">delete</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderPriorityTriageNote(groupA){
+  var el = document.getElementById('priority-triage-note');
+  if(!el) return;
+  if(!groupA.length){ el.style.display = 'none'; return; }
+
+  var targets = groupA.map(function(d){
+    var p = debtGroupAPromo(d);
+    var months = monthsUntilDeadline(p.promoDeadline);
+    var monthly = months === null ? 0 : (months === 0 ? num(p.amount) : num(p.amount) / months);
+    return { debt:d, promo:p, monthly:monthly, isBomb: p.promoType === 'deferredInterest' };
+  });
+  var totalNeeded = targets.reduce(function(s,t){ return s + t.monthly; }, 0);
+  var surplus = confirmedLeftover();
+  if(surplus >= totalNeeded){ el.style.display = 'none'; return; }
+
+  var bombs = targets.filter(function(t){ return t.isBomb; })
+    .sort(function(a,b){ return num(b.promo.accruedInterest) - num(a.promo.accruedInterest); });
+  var reverts = targets.filter(function(t){ return !t.isBomb; });
+  var ordered = bombs.concat(reverts);
+
+  var remaining = surplus, fundedCount = 0;
+  ordered.forEach(function(t){
+    if(remaining >= t.monthly){ remaining -= t.monthly; fundedCount++; }
+  });
+
+  var protectText = bombs.map(function(t){
+    return escapeHtml(t.debt.name) + ' — ' + (t.promo.accruedInterest!=null ? fmt(t.promo.accruedInterest) : '?') + ' at risk';
+  }).join(', ');
+  var slipText = reverts.map(function(t){
+    return escapeHtml(t.debt.name) + ' — 0%' + (t.promo.revertApr!=null ? ('&rarr;'+num(t.promo.revertApr).toFixed(2)+'%') : '') + ', no lump';
+  }).join(', ');
+
+  var msg = 'Your surplus covers ' + fundedCount + ' of ' + ordered.length + ' deadline targets this month.';
+  if(protectText) msg += ' Protect: ' + protectText + '.';
+  if(slipText) msg += ' If something has to give, let ' + slipText + ' slide into the rate pile.';
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
 function renderPriority(){
   var list = document.getElementById('debts-list');
 
@@ -934,51 +1064,32 @@ function renderPriority(){
   var sorted = trackedDebts().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
   document.getElementById('priority-stale-notice').style.display = priorityOrderIsStale() ? 'block' : 'none';
 
+  var groupA = sorted.filter(isGroupA);
+  var groupB = sorted.filter(function(d){ return !isGroupA(d); });
+
+  renderPriorityTriageNote(groupA);
+
   if(!sorted.length){
     list.innerHTML = '<div class="hint">No debts yet.</div>';
     return;
   }
-  list.innerHTML = sorted.map(function(d, idx){
-    var promoSum = (d.promos||[]).reduce(function(s,p){ return s + num(p.amount); }, 0);
-    var remainder = num(d.balance) - promoSum;
-    var baseLine = '';
-    if(remainder > 0.01 || !(d.promos||[]).length){
-      var baseAprText = (d.apr === null || d.apr === undefined || d.apr === '') ? 'APR unknown — add it' : (num(d.apr).toFixed(2) + '% APR');
-      var baseAmt = (d.promos||[]).length ? remainder : num(d.balance);
-      baseLine = '<div class="debt-signals">' + fmt(baseAmt) + ' — ' + baseAprText + '</div>';
-    }
-    var buckets = (d.promos||[]).map(function(p){
-      var namePrefix = p.name ? '<strong>' + escapeHtml(p.name) + ':</strong> ' : '';
-      if(p.promoType && p.promoType !== 'none'){
-        var label = p.promoType === 'zeroPct' ? '0%' : 'deferred interest';
-        var dl = p.promoDeadline;
-        var dDays = dl ? daysUntil(dl) : null;
-        var urgent = dDays !== null && dDays <= 90;
-        var revertTxt = p.promoType === 'zeroPct'
-          ? (p.revertApr !== null && p.revertApr !== undefined && p.revertApr !== '' ? ' — reverts to ' + num(p.revertApr).toFixed(2) + '% on ' + (dl?fmtDate(dl):'?') : (dl ? ' — reverts on ' + fmtDate(dl) : ''))
-          : (' — $' + num(p.amount).toFixed(2) + ' detonates on ' + (dl?fmtDate(dl):'?'));
-        return '<div class="debt-signals' + (urgent?' urgent':'') + '">' + namePrefix + fmt(p.amount) + ' — ' + label + revertTxt +
-          (urgent ? ' &middot; <strong>' + (dDays<0? 'OVERDUE':(dDays+'d left')) + '</strong>' : '') + '</div>';
-      }
-      var aprText = (p.apr === null || p.apr === undefined || p.apr === '') ? 'APR unknown — add it' : (num(p.apr).toFixed(2) + '% APR');
-      return '<div class="debt-signals">' + namePrefix + fmt(p.amount) + ' — ' + aprText + '</div>';
+
+  var html = '';
+  if(groupA.length){
+    html += '<div class="priority-section-title">DEADLINE BOMBS (' + groupA.length + ')</div>';
+    html += groupA.map(function(d, gi){
+      var globalIdx = sorted.indexOf(d);
+      return bombRowHtml(d, globalIdx, gi, groupA.length);
     }).join('');
-    return '<div class="debt-row" data-id="'+d.id+'">' +
-      '<div class="debt-top">' +
-        '<div class="debt-rank">' +
-          '<button data-act="rank-up" data-id="'+d.id+'" type="button" ' + (idx===0?'disabled':'') + '>▲</button>' +
-          '<button data-act="rank-down" data-id="'+d.id+'" type="button" ' + (idx===sorted.length-1?'disabled':'') + '>▼</button>' +
-        '</div>' +
-        '<span class="debt-name">#' + (idx+1) + ' ' + escapeHtml(d.name) + '</span>' +
-        '<span class="item-amt">' + fmt(debtTotalBalance(d)) + '</span>' +
-      '</div>' +
-      '<div class="debt-buckets">' + baseLine + buckets + '</div>' +
-      '<div class="item-actions">' +
-        '<button data-act="edit-debt" data-id="'+d.id+'" type="button">edit</button>' +
-        '<button data-act="del-debt" data-id="'+d.id+'" type="button">delete</button>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  }
+  if(groupB.length){
+    html += '<div class="priority-section-title">RATE DEBTS (' + groupB.length + ')</div>';
+    html += groupB.map(function(d, gi){
+      var globalIdx = sorted.indexOf(d);
+      return rateRowHtml(d, globalIdx, gi, groupB.length);
+    }).join('');
+  }
+  list.innerHTML = html;
 }
 
 function renderAll(){
@@ -1242,7 +1353,9 @@ function openBillForm(existing){
         var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
         var revertRaw = row.querySelector('.f-debt-revert').value;
         var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-        return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+        var accruedRaw = row.querySelector('.f-debt-accrued').value;
+        var accrued = promoType === 'deferredInterest' && accruedRaw !== '' ? num(accruedRaw) : null;
+        return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert, accruedInterest:accrued };
       });
 
       var full = num(document.getElementById('f-bill-full').value);
@@ -1338,7 +1451,7 @@ function openIncomeForm(existing){
 function promoSummaryText(p){
   var promo = p.promoType || 'none';
   if(promo === 'zeroPct') return fmt(p.amount) + ' — 0% intro';
-  if(promo === 'deferredInterest') return fmt(p.amount) + ' — deferred interest';
+  if(promo === 'deferredInterest') return fmt(p.amount) + ' — deferred interest' + (p.accruedInterest!=null ? ' (' + fmt(p.accruedInterest) + ' if missed)' : '');
   return fmt(p.amount) + (p.apr!=null && p.apr!=='' ? ' — '+num(p.apr).toFixed(2)+'% APR' : '');
 }
 
@@ -1369,6 +1482,8 @@ function debtPromoRowHtml(p, idx){
       '<div class="form-row"><label>APR</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
       '<div class="form-row promo-deadline-row" style="display:'+(hasPromo?'block':'none')+';"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
       '<div class="form-row promo-revert-row" style="display:'+(hasPromo?'block':'none')+';"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
+      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';"><label>ACCRUED INTEREST IF MISSED</label><input type="number" step="0.01" class="f-debt-accrued" value="'+(p.accruedInterest!=null?p.accruedInterest:'')+'" placeholder="e.g. 663.00">' +
+        '<p class="hint" style="padding-top:2px;">The dollar amount that gets charged retroactively if you miss the deadline.</p></div>' +
       '<button type="button" class="remove-row-btn">Remove this promo</button>' +
     '</div>' +
   '</div>';
@@ -1452,7 +1567,9 @@ function openDebtForm(existing){
       var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
       var revertRaw = row.querySelector('.f-debt-revert').value;
       var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-      return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert };
+      var accruedRaw = row.querySelector('.f-debt-accrued').value;
+      var accrued = promoType === 'deferredInterest' && accruedRaw !== '' ? num(accruedRaw) : null;
+      return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert, accruedInterest:accrued };
     });
     if(existing){
       existing.name = name; existing.apr = aprTop; existing.promos = promos;
@@ -1486,16 +1603,16 @@ document.getElementById('floor-input').addEventListener('change', function(e){
 });
 
 function computeSuggestedOrder(debts){
-  var sorted = debts.slice();
-  sorted.sort(function(a,b){
-    var aDays = debtMostUrgentDays(a);
-    var bDays = debtMostUrgentDays(b);
-    if(aDays !== null && bDays !== null) return aDays - bDays;
-    if(aDays !== null) return -1;
-    if(bDays !== null) return 1;
-    return debtEffectiveApr(b) - debtEffectiveApr(a);
+  var groupA = debts.filter(isGroupA);
+  var groupB = debts.filter(function(d){ return !isGroupA(d); });
+  groupA.sort(function(a,b){
+    var pa = debtGroupAPromo(a), pb = debtGroupAPromo(b);
+    var da = pa.promoDeadline ? daysUntil(pa.promoDeadline) : Infinity;
+    var db = pb.promoDeadline ? daysUntil(pb.promoDeadline) : Infinity;
+    return da - db;
   });
-  return sorted;
+  groupB.sort(function(a,b){ return debtEffectiveApr(b) - debtEffectiveApr(a); });
+  return groupA.concat(groupB);
 }
 
 function applySuggestedOrder(){
@@ -1579,7 +1696,7 @@ document.body.addEventListener('click', function(e){
     var sorted = trackedDebts().sort(function(a,b){ return num(a.priorityRank)-num(b.priorityRank); });
     var idx = sorted.findIndex(function(d){return d.id===id;});
     var swapIdx = act === 'rank-up' ? idx-1 : idx+1;
-    if(swapIdx>=0 && swapIdx<sorted.length){
+    if(swapIdx>=0 && swapIdx<sorted.length && isGroupA(sorted[idx]) === isGroupA(sorted[swapIdx])){
       var tmp = sorted[idx].priorityRank;
       sorted[idx].priorityRank = sorted[swapIdx].priorityRank;
       sorted[swapIdx].priorityRank = tmp;
@@ -1603,6 +1720,7 @@ document.body.addEventListener('change', function(e){
     var hasPromo = e.target.value !== 'none';
     row.querySelector('.promo-deadline-row').style.display = hasPromo ? 'block' : 'none';
     row.querySelector('.promo-revert-row').style.display = hasPromo ? 'block' : 'none';
+    row.querySelector('.promo-accrued-row').style.display = (e.target.value === 'deferredInterest') ? 'block' : 'none';
     if(e.target.value === 'zeroPct' || e.target.value === 'deferredInterest'){
       row.querySelector('.f-debt-apr').value = '0';
     }
