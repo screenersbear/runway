@@ -672,10 +672,49 @@ function debtGroupAPromo(d){
 }
 function isGroupA(d){ return !!debtGroupAPromo(d); }
 
+function monthsSince(dateStr){
+  if(!dateStr) return 0;
+  var today = todayMid();
+  var parts = dateStr.split('-');
+  var y = Number(parts[0]), m = Number(parts[1])-1;
+  var months = (today.getFullYear()*12+today.getMonth()) - (y*12+m);
+  return Math.max(months, 0);
+}
+
+function monthName(dateStr){
+  if(!dateStr) return '';
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var parts = dateStr.split('-');
+  return months[Number(parts[1])-1];
+}
+
+function accruedEstimate(p){
+  if(!p) return null;
+  if(p.accruedSnapshot != null && p.accruedSnapshotDate){
+    var months = monthsSince(p.accruedSnapshotDate);
+    var monthly = p.monthlyAccrual != null ? num(p.monthlyAccrual) : (num(p.amount) * (num(p.revertApr) / 100) / 12);
+    return {
+      value: num(p.accruedSnapshot) + monthly * months,
+      freshnessText: 'est. from ' + monthName(p.accruedSnapshotDate) + ' statement',
+      stale: (-daysUntil(p.accruedSnapshotDate)) > 35
+    };
+  }
+  if(p.promoStartDate){
+    var years = Math.max((-daysUntil(p.promoStartDate)) / 365, 0);
+    return {
+      value: num(p.amount) * (num(p.revertApr) / 100) * years,
+      freshnessText: 'rough estimate from plan start date',
+      stale: false
+    };
+  }
+  return null;
+}
+
 function costOfMissingText(p){
   if(!p) return '';
   if(p.promoType === 'deferredInterest'){
-    return p.accruedInterest != null ? fmt(p.accruedInterest) + ' hits if late' : 'Interest amount unknown — add it';
+    var est = accruedEstimate(p);
+    return est ? ('~' + fmt(est.value) + ' hits if late (' + est.freshnessText + ')') : 'Interest amount unknown — add it';
   }
   if(p.promoType === 'zeroPct'){
     return p.revertApr != null ? 'starts charging ' + num(p.revertApr).toFixed(2) + '% — no lump' : 'reverts to unknown rate — no lump';
@@ -961,9 +1000,10 @@ function priorityOrderIsStale(){
 function bombRowHtml(d, globalIdx, groupIdx, groupLen){
   var promo = debtGroupAPromo(d);
   var isBomb = promo.promoType === 'deferredInterest';
+  var est = isBomb ? accruedEstimate(promo) : null;
   var badgeClass = isBomb ? 'bomb' : 'reverts';
   var badgeText = isBomb
-    ? ('BOMB ' + (promo.accruedInterest!=null ? fmt(promo.accruedInterest) : '?'))
+    ? ('BOMB ' + (est ? '~'+fmt(est.value) : '?'))
     : ('REVERTS ' + (promo.revertApr!=null ? num(promo.revertApr).toFixed(2)+'%' : '?'));
   var dl = promo.promoDeadline;
   var dDays = dl ? daysUntil(dl) : null;
@@ -973,6 +1013,7 @@ function bombRowHtml(d, globalIdx, groupIdx, groupLen){
     : 'no deadline set — add one';
   var costText = costOfMissingText(promo);
   var clearText = monthlyToClearText(promo);
+  var nudgeText = (est && est.stale) ? 'update from latest statement' : '';
   var namePart = promo.name ? escapeHtml(d.name) + ' <span class="muted">(' + escapeHtml(promo.name) + ')</span>' : escapeHtml(d.name);
   return '<div class="debt-row" data-id="'+d.id+'">' +
     '<div class="debt-top">' +
@@ -987,6 +1028,7 @@ function bombRowHtml(d, globalIdx, groupIdx, groupLen){
     '<div class="debt-signals'+(escalation?' '+escalation:'')+'">' + deadlineText + '</div>' +
     (costText ? '<div class="debt-signals">' + costText + '</div>' : '') +
     (clearText ? '<div class="debt-signals">' + clearText + '</div>' : '') +
+    (nudgeText ? '<div class="debt-signals muted">' + nudgeText + '</div>' : '') +
     '<div class="item-actions">' +
       '<button data-act="edit-debt" data-id="'+d.id+'" type="button">edit</button>' +
       '<button data-act="del-debt" data-id="'+d.id+'" type="button">delete</button>' +
@@ -1030,7 +1072,10 @@ function renderPriorityTriageNote(groupA){
   if(surplus >= totalNeeded){ el.style.display = 'none'; return; }
 
   var bombs = targets.filter(function(t){ return t.isBomb; })
-    .sort(function(a,b){ return num(b.promo.accruedInterest) - num(a.promo.accruedInterest); });
+    .sort(function(a,b){
+      var ea = accruedEstimate(a.promo), eb = accruedEstimate(b.promo);
+      return (eb?eb.value:0) - (ea?ea.value:0);
+    });
   var reverts = targets.filter(function(t){ return !t.isBomb; });
   var ordered = bombs.concat(reverts);
 
@@ -1040,7 +1085,8 @@ function renderPriorityTriageNote(groupA){
   });
 
   var protectText = bombs.map(function(t){
-    return escapeHtml(t.debt.name) + ' — ' + (t.promo.accruedInterest!=null ? fmt(t.promo.accruedInterest) : '?') + ' at risk';
+    var est = accruedEstimate(t.promo);
+    return escapeHtml(t.debt.name) + ' — ' + (est ? '~'+fmt(est.value) : '?') + ' at risk';
   }).join(', ');
   var slipText = reverts.map(function(t){
     return escapeHtml(t.debt.name) + ' — 0%' + (t.promo.revertApr!=null ? ('&rarr;'+num(t.promo.revertApr).toFixed(2)+'%') : '') + ', no lump';
@@ -1353,9 +1399,15 @@ function openBillForm(existing){
         var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
         var revertRaw = row.querySelector('.f-debt-revert').value;
         var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-        var accruedRaw = row.querySelector('.f-debt-accrued').value;
-        var accrued = promoType === 'deferredInterest' && accruedRaw !== '' ? num(accruedRaw) : null;
-        return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert, accruedInterest:accrued };
+        var isDeferred = promoType === 'deferredInterest';
+        var snapRaw = row.querySelector('.f-debt-accrued-snap').value;
+        var accruedSnapshot = isDeferred && snapRaw !== '' ? num(snapRaw) : null;
+        var accruedSnapshotDate = isDeferred ? (row.querySelector('.f-debt-accrued-snap-date').value || null) : null;
+        var monthlyRaw = row.querySelector('.f-debt-monthly-accrual').value;
+        var monthlyAccrual = isDeferred && monthlyRaw !== '' ? num(monthlyRaw) : null;
+        var promoStartDate = isDeferred ? (row.querySelector('.f-debt-promo-start').value || null) : null;
+        return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert,
+          accruedSnapshot:accruedSnapshot, accruedSnapshotDate:accruedSnapshotDate, monthlyAccrual:monthlyAccrual, promoStartDate:promoStartDate };
       });
 
       var full = num(document.getElementById('f-bill-full').value);
@@ -1451,7 +1503,10 @@ function openIncomeForm(existing){
 function promoSummaryText(p){
   var promo = p.promoType || 'none';
   if(promo === 'zeroPct') return fmt(p.amount) + ' — 0% intro';
-  if(promo === 'deferredInterest') return fmt(p.amount) + ' — deferred interest' + (p.accruedInterest!=null ? ' (' + fmt(p.accruedInterest) + ' if missed)' : '');
+  if(promo === 'deferredInterest'){
+    var est = accruedEstimate(p);
+    return fmt(p.amount) + ' — deferred interest' + (est ? ' (~' + fmt(est.value) + ' if missed)' : '');
+  }
   return fmt(p.amount) + (p.apr!=null && p.apr!=='' ? ' — '+num(p.apr).toFixed(2)+'% APR' : '');
 }
 
@@ -1482,8 +1537,16 @@ function debtPromoRowHtml(p, idx){
       '<div class="form-row"><label>APR</label><input type="number" step="0.01" class="f-debt-apr" value="'+(p.apr!=null?p.apr:'')+'" placeholder="e.g. 24.99"></div>' +
       '<div class="form-row promo-deadline-row" style="display:'+(hasPromo?'block':'none')+';"><label>PROMO DEADLINE</label><input type="date" class="f-debt-deadline" value="'+(p.promoDeadline||'')+'"></div>' +
       '<div class="form-row promo-revert-row" style="display:'+(hasPromo?'block':'none')+';"><label>REVERT APR (becomes the APR above once the promo ends)</label><input type="number" step="0.01" class="f-debt-revert" value="'+(p.revertApr!=null?p.revertApr:'')+'" placeholder="e.g. 28.74"></div>' +
-      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';"><label>ACCRUED INTEREST IF MISSED</label><input type="number" step="0.01" class="f-debt-accrued" value="'+(p.accruedInterest!=null?p.accruedInterest:'')+'" placeholder="e.g. 663.00">' +
-        '<p class="hint" style="padding-top:2px;">The dollar amount that gets charged retroactively if you miss the deadline.</p></div>' +
+      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';">' +
+        '<label>SNAPSHOT AMOUNT</label><input type="number" step="0.01" class="f-debt-accrued-snap" value="'+(p.accruedSnapshot!=null?p.accruedSnapshot:'')+'" placeholder="e.g. 663.00">' +
+        '<p class="hint" style="padding-top:2px;">From your statement\'s Deferred Interest Calculation section: the Total Accrued Deferred Interest, the statement date below, and the Monthly Accrued figure if shown. Leave monthly blank to estimate it from the balance and APR.</p>' +
+      '</div>' +
+      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';"><label>SNAPSHOT DATE</label><input type="date" class="f-debt-accrued-snap-date" value="'+(p.accruedSnapshotDate||'')+'"></div>' +
+      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';"><label>MONTHLY ACCRUAL (optional)</label><input type="number" step="0.01" class="f-debt-monthly-accrual" value="'+(p.monthlyAccrual!=null?p.monthlyAccrual:'')+'" placeholder="e.g. 66.00"></div>' +
+      '<div class="form-row promo-accrued-row" style="display:'+(promo==='deferredInterest'?'block':'none')+';">' +
+        '<label>PLAN START DATE (fallback if no snapshot)</label><input type="date" class="f-debt-promo-start" value="'+(p.promoStartDate||'')+'">' +
+        '<p class="hint" style="padding-top:2px;">Only used to estimate accrued interest when there&rsquo;s no statement snapshot above &mdash; a rougher number since it ignores changing balances.</p>' +
+      '</div>' +
       '<button type="button" class="remove-row-btn">Remove this promo</button>' +
     '</div>' +
   '</div>';
@@ -1567,9 +1630,15 @@ function openDebtForm(existing){
       var deadline = promoType === 'none' ? null : (row.querySelector('.f-debt-deadline').value || null);
       var revertRaw = row.querySelector('.f-debt-revert').value;
       var revert = promoType === 'none' ? null : (revertRaw === '' ? null : num(revertRaw));
-      var accruedRaw = row.querySelector('.f-debt-accrued').value;
-      var accrued = promoType === 'deferredInterest' && accruedRaw !== '' ? num(accruedRaw) : null;
-      return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert, accruedInterest:accrued };
+      var isDeferred = promoType === 'deferredInterest';
+      var snapRaw = row.querySelector('.f-debt-accrued-snap').value;
+      var accruedSnapshot = isDeferred && snapRaw !== '' ? num(snapRaw) : null;
+      var accruedSnapshotDate = isDeferred ? (row.querySelector('.f-debt-accrued-snap-date').value || null) : null;
+      var monthlyRaw = row.querySelector('.f-debt-monthly-accrual').value;
+      var monthlyAccrual = isDeferred && monthlyRaw !== '' ? num(monthlyRaw) : null;
+      var promoStartDate = isDeferred ? (row.querySelector('.f-debt-promo-start').value || null) : null;
+      return { id: uid(), name:name||null, amount:amount, apr:apr, promoType:promoType, promoDeadline:deadline, revertApr:revert,
+        accruedSnapshot:accruedSnapshot, accruedSnapshotDate:accruedSnapshotDate, monthlyAccrual:monthlyAccrual, promoStartDate:promoStartDate };
     });
     if(existing){
       existing.name = name; existing.apr = aprTop; existing.promos = promos;
@@ -1720,7 +1789,8 @@ document.body.addEventListener('change', function(e){
     var hasPromo = e.target.value !== 'none';
     row.querySelector('.promo-deadline-row').style.display = hasPromo ? 'block' : 'none';
     row.querySelector('.promo-revert-row').style.display = hasPromo ? 'block' : 'none';
-    row.querySelector('.promo-accrued-row').style.display = (e.target.value === 'deferredInterest') ? 'block' : 'none';
+    var accruedDisplay = (e.target.value === 'deferredInterest') ? 'block' : 'none';
+    row.querySelectorAll('.promo-accrued-row').forEach(function(r){ r.style.display = accruedDisplay; });
     if(e.target.value === 'zeroPct' || e.target.value === 'deferredInterest'){
       row.querySelector('.f-debt-apr').value = '0';
     }
