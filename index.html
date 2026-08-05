@@ -1217,9 +1217,15 @@ function accountFormHtml(a){
   '</div>';
 }
 
+var pendingPaidCheckbox = null;
+
 function closeModal(){
   document.getElementById('modalOverlay').classList.remove('open');
   document.getElementById('modalCard').innerHTML = '';
+  if(pendingPaidCheckbox){
+    pendingPaidCheckbox.checked = false;
+    pendingPaidCheckbox = null;
+  }
 }
 
 function openAccountForm(existing){
@@ -1778,7 +1784,35 @@ document.body.addEventListener('click', function(e){
 document.body.addEventListener('change', function(e){
   if(e.target.dataset && e.target.dataset.act === 'paid'){
     var bill = DATA.bills.find(function(b){return b.id===e.target.dataset.id;});
-    if(bill){ bill.paid = e.target.checked; save(); }
+    if(!bill) return;
+    if(!e.target.checked){
+      bill.paid = false;
+      save();
+      return;
+    }
+    pendingPaidCheckbox = e.target;
+    document.getElementById('modalCard').innerHTML = payBillModalHtml(bill);
+    document.getElementById('modalOverlay').classList.add('open');
+    var deductBtn = document.getElementById('f-paybill-deduct');
+    if(deductBtn){
+      deductBtn.addEventListener('click', function(){
+        var acct = DATA.accounts.find(function(a){ return a.id === document.getElementById('f-paybill-account').value; });
+        if(acct) acct.balance = num(acct.balance) - billAmount(bill);
+        bill.paid = true;
+        pendingPaidCheckbox = null;
+        closeModal();
+        save();
+      });
+    }
+    document.getElementById('f-paybill-skip').addEventListener('click', function(){
+      bill.paid = true;
+      pendingPaidCheckbox = null;
+      closeModal();
+      save();
+    });
+    document.getElementById('f-paybill-cancel').addEventListener('click', function(){
+      closeModal();
+    });
   }
   if(e.target.dataset && e.target.dataset.act === 'received'){
     var income = DATA.income.find(function(i){return i.id===e.target.dataset.id;});
@@ -1866,6 +1900,26 @@ document.getElementById('btnAppData').addEventListener('click', function(){
   });
   document.getElementById('f-appdata-cancel').addEventListener('click', closeModal);
 });
+
+function payBillModalHtml(bill){
+  var amount = billAmount(bill);
+  var hasAccounts = DATA.accounts.length > 0;
+  var bankOptionsHtml = DATA.accounts.map(function(a){
+    return '<option value="'+a.id+'" '+(bill.bankAccountId===a.id?'selected':'')+'>'+escapeHtml(a.name)+'</option>';
+  }).join('');
+  return '<div class="form">' +
+    '<div class="section-title" style="margin-top:0;">MARK AS PAID</div>' +
+    '<p class="hint">Deduct ' + fmt(amount) + ' for &ldquo;' + escapeHtml(bill.name) + '&rdquo; from Cash on Hand?</p>' +
+    (hasAccounts
+      ? '<div class="form-row"><label>BANK / ACCOUNT</label><select id="f-paybill-account">'+bankOptionsHtml+'</select></div>'
+      : '<p class="hint">Add an account on the Runway screen to deduct payments.</p>') +
+    '<div class="form-actions" style="flex-direction:column;">' +
+      (hasAccounts ? '<button class="btn" id="f-paybill-deduct" type="button">Deduct &amp; mark paid</button>' : '') +
+      '<button class="btn secondary" id="f-paybill-skip" type="button">Just mark paid</button>' +
+      '<button class="btn secondary" id="f-paybill-cancel" type="button">Cancel</button>' +
+    '</div>' +
+  '</div>';
+}
 
 function appDataModalHtml(){
   return '<div class="form">' +
