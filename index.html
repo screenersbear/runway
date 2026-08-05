@@ -450,6 +450,8 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <section id="screen-priority" class="screen">
 
       <div class="section-title">PAYOFF PRIORITY</div>
+      <div class="label line">TOTAL DEBT</div>
+      <div class="value small" id="priority-total-debt">$0.00</div>
       <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always. New debts come from Bills &mdash; set a bill's type to Credit Card or Loan and check "Also track as debt."</p>
 
       <button class="add-btn" id="suggestOrderBtn" type="button">Suggest order</button>
@@ -1109,6 +1111,9 @@ function renderPriority(){
 
   var sorted = trackedDebts().sort(function(a,b){ return num(a.priorityRank) - num(b.priorityRank); });
   document.getElementById('priority-stale-notice').style.display = priorityOrderIsStale() ? 'block' : 'none';
+
+  var totalDebt = sorted.reduce(function(s,d){ return s + debtTotalBalance(d); }, 0);
+  document.getElementById('priority-total-debt').textContent = fmt(totalDebt);
 
   var groupA = sorted.filter(isGroupA);
   var groupB = sorted.filter(function(d){ return !isGroupA(d); });
