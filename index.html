@@ -244,6 +244,7 @@ main{
   font-size:14px; color:var(--ink); font-weight:bold; cursor:pointer;
 }
 .add-btn:active{ background:rgba(70,110,200,0.12); }
+#suggestOrderBtn{ display:block; width:100%; text-align:center; }
 .form{ padding:10px 0 14px 0; }
 .form-row{ margin-bottom:10px; }
 .form-row label{ display:block; font-size:11.5px; letter-spacing:1px; opacity:0.65; margin-bottom:3px; }
@@ -452,9 +453,9 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div class="section-title">PAYOFF PRIORITY</div>
       <div class="label line">TOTAL DEBT</div>
       <div class="value small" id="priority-total-debt">$0.00</div>
-      <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always. New debts come from Bills &mdash; set a bill's type to Credit Card or Loan and check "Also track as debt."</p>
+      <p class="hint">Surplus goes to rank #1 &mdash; after every bill's minimum is covered. Minimums first, always. New debts come from Bills &mdash; open any bill and check "Also track as debt."</p>
 
-      <button class="add-btn" id="suggestOrderBtn" type="button">Suggest order</button>
+      <button class="btn secondary" id="suggestOrderBtn" type="button">Suggest order</button>
       <p class="hint">Deadline Bombs (a deferred-interest or 0% promo) always come first, soonest deadline first &mdash; a deferred-interest deadline can trigger a retroactive lump, so date beats rate. Rate Debts (no promo) come after, highest APR first.</p>
       <div class="warning" id="priority-stale-notice" style="display:none; cursor:pointer;">Priority order may be out of date &mdash; a deadline has shifted since you last suggested an order. Tap here to refresh it.</div>
       <div class="warning" id="priority-triage-note" style="display:none;"></div>
@@ -954,12 +955,13 @@ function renderBills(){
 function incomeRowHtml(i){
   var badgeClass = i.received ? 'received' : i.confidence;
   var badgeText = i.received ? 'RECEIVED' : i.confidence.toUpperCase();
+  var recurBadge = i.recurrence === 'monthly' ? '<span class="badge onetime">MONTHLY</span>' : (i.recurrence === 'quarterly' ? '<span class="badge onetime">QUARTERLY</span>' : '');
   return '<div class="item" data-id="'+i.id+'">' +
     '<div class="item-top">' +
       '<span class="item-name">' + escapeHtml(i.name) + '</span>' +
       '<span class="item-amt">' + fmt(i.amount) + '</span>' +
     '</div>' +
-    '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + badgeClass + '">' + badgeText + '</span></div>' +
+    '<div class="item-sub">Expected ' + fmtDate(i.expectedDate) + ' &middot; <span class="badge ' + badgeClass + '">' + badgeText + '</span> ' + recurBadge + '</div>' +
     '<div class="item-actions">' +
       '<label class="paid-check"><input type="checkbox" data-act="received" data-id="'+i.id+'" ' + (i.received?'checked':'') + '> received</label>' +
       '<button data-act="edit-income" data-id="'+i.id+'" type="button">edit</button>' +
@@ -1273,13 +1275,15 @@ function billFormHtml(b){
   b = b || {};
   var recurrence = b.recurrence || 'monthly';
   var type = b.type || 'general';
-  var isDebt = isDebtBillType(type);
   var typeOptions = BILL_TYPES.map(function(t){
     return '<option value="'+t[0]+'" '+(type===t[0]?'selected':'')+'>'+t[1]+'</option>';
   }).join('');
   var linkedDebt = b.linkedDebtId ? DATA.debts.find(function(d){ return d.id === b.linkedDebtId; }) : null;
   var promos = (linkedDebt && linkedDebt.promos) ? linkedDebt.promos : [];
-  var asDebtChecked = linkedDebt ? (linkedDebt.trackedInPriority !== false) : false;
+  var asDebtChecked = (b.wantsDebt !== undefined && b.wantsDebt !== null)
+    ? b.wantsDebt
+    : (linkedDebt ? (linkedDebt.trackedInPriority !== false) : isDebtBillType(type));
+  var isDebt = asDebtChecked;
 
   var balanceFieldHtml = '<div class="form-row"><label>'+(isDebt?'BALANCE':'FULL AMOUNT')+'</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>';
   var minAmountFieldHtml = '<div class="form-row"><label>MIN AMOUNT</label><input type="number" step="0.01" id="f-bill-min" value="'+(b.amountMin!=null?b.amountMin:'')+'" placeholder="0.00"></div>';
@@ -1330,7 +1334,7 @@ function billFormHtml(b){
       '</select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-bill-paid" '+(b.paid?'checked':'')+' style="width:auto;"> Paid</label></div>' +
-    (isDebt ? '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(asDebtChecked?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' : '') +
+    '<div class="form-row"><label><input type="checkbox" id="f-bill-asdebt" '+(asDebtChecked?'checked':'')+' style="width:auto;"> Also track as debt (adds it to Priority)</label></div>' +
     '<div class="form-actions">' +
       '<button class="btn" id="f-bill-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-bill-cancel" type="button">Cancel</button>' +
@@ -1350,24 +1354,31 @@ function openBillForm(existing){
     refreshPromoRowsUI();
   }
 
+  function currentFormState(){
+    return {
+      name: document.getElementById('f-bill-name').value,
+      type: document.getElementById('f-bill-type').value,
+      amountFull: document.getElementById('f-bill-full').value,
+      amountMin: document.getElementById('f-bill-min').value,
+      dueDate: document.getElementById('f-bill-due').value,
+      payMode: document.getElementById('f-bill-mode').value,
+      customAmount: document.getElementById('f-bill-custom').value,
+      recurrence: document.getElementById('f-bill-recurring').value,
+      paid: document.getElementById('f-bill-paid').checked,
+      bankAccountId: document.getElementById('f-bill-bank') ? document.getElementById('f-bill-bank').value : (existing ? existing.bankAccountId : null),
+      autopay: document.getElementById('f-bill-autopay').checked,
+      apr: document.getElementById('f-bill-apr') ? document.getElementById('f-bill-apr').value : (existing ? existing.apr : null),
+      wantsDebt: document.getElementById('f-bill-asdebt').checked,
+      linkedDebtId: existing ? existing.linkedDebtId : null
+    };
+  }
+
   function wire(){
     document.getElementById('f-bill-type').addEventListener('change', function(){
-      var merged = {
-        name: document.getElementById('f-bill-name').value,
-        type: this.value,
-        amountFull: document.getElementById('f-bill-full').value,
-        amountMin: document.getElementById('f-bill-min').value,
-        dueDate: document.getElementById('f-bill-due').value,
-        payMode: document.getElementById('f-bill-mode').value,
-        customAmount: document.getElementById('f-bill-custom').value,
-        recurrence: document.getElementById('f-bill-recurring').value,
-        paid: document.getElementById('f-bill-paid').checked,
-        bankAccountId: document.getElementById('f-bill-bank') ? document.getElementById('f-bill-bank').value : (existing ? existing.bankAccountId : null),
-        autopay: document.getElementById('f-bill-autopay').checked,
-        apr: document.getElementById('f-bill-apr') ? document.getElementById('f-bill-apr').value : (existing ? existing.apr : null),
-        linkedDebtId: existing ? existing.linkedDebtId : null
-      };
-      render(merged);
+      render(currentFormState());
+    });
+    document.getElementById('f-bill-asdebt').addEventListener('change', function(){
+      render(currentFormState());
     });
 
     document.getElementById('addPromoRowBtn').addEventListener('click', function(){
@@ -1385,7 +1396,6 @@ function openBillForm(existing){
       var name = document.getElementById('f-bill-name').value.trim();
       if(!name) return;
       var type = document.getElementById('f-bill-type').value;
-      var isDebt = isDebtBillType(type);
       var min = num(document.getElementById('f-bill-min').value);
       var due = document.getElementById('f-bill-due').value;
       var mode = document.getElementById('f-bill-mode').value;
@@ -1395,8 +1405,7 @@ function openBillForm(existing){
       var paid = document.getElementById('f-bill-paid').checked;
       var bankAccountId = document.getElementById('f-bill-bank').value || null;
       var autopay = document.getElementById('f-bill-autopay').checked;
-      var asDebtEl = document.getElementById('f-bill-asdebt');
-      var asDebt = asDebtEl ? asDebtEl.checked : false;
+      var isDebt = document.getElementById('f-bill-asdebt').checked;
       var aprEl = document.getElementById('f-bill-apr');
       var apr = aprEl ? (aprEl.value === '' ? null : num(aprEl.value)) : null;
 
@@ -1437,14 +1446,14 @@ function openBillForm(existing){
       if(isDebt){
         if(bill.linkedDebtId){
           var linkedDebt = DATA.debts.find(function(d){ return d.id === bill.linkedDebtId; });
-          if(linkedDebt){ linkedDebt.name = name; linkedDebt.balance = full; linkedDebt.apr = apr; linkedDebt.promos = promos; linkedDebt.trackedInPriority = asDebt; }
+          if(linkedDebt){ linkedDebt.name = name; linkedDebt.balance = full; linkedDebt.apr = apr; linkedDebt.promos = promos; linkedDebt.trackedInPriority = true; }
         } else {
           var maxRank = DATA.debts.reduce(function(m,x){ return Math.max(m, num(x.priorityRank)); }, 0);
-          var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id, balance:full, apr:apr, promos:promos, trackedInPriority:asDebt };
+          var newDebt = { id:uid(), name:name, priorityRank:maxRank+1, linkedBillId:bill.id, balance:full, apr:apr, promos:promos, trackedInPriority:true };
           DATA.debts.push(newDebt);
           bill.linkedDebtId = newDebt.id;
         }
-        if(asDebt) tryAutoSuggest();
+        tryAutoSuggest();
       } else if(bill.linkedDebtId){
         var oldDebt = DATA.debts.find(function(d){ return d.id === bill.linkedDebtId; });
         if(oldDebt) oldDebt.trackedInPriority = false;
@@ -1465,6 +1474,7 @@ function openBillForm(existing){
 function incomeFormHtml(i){
   i = i || {};
   var conf = i.confidence || 'likely';
+  var recurrence = i.recurrence || 'once';
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-inc-name" value="'+escapeHtml(i.name||'')+'" placeholder="e.g. Booking deposit"></div>' +
     '<div class="form-row"><label>AMOUNT</label><input type="number" step="0.01" id="f-inc-amount" value="'+(i.amount!=null?i.amount:'')+'" placeholder="0.00"></div>' +
@@ -1474,6 +1484,13 @@ function incomeFormHtml(i){
         '<option value="confirmed" '+(conf==='confirmed'?'selected':'')+'>Confirmed</option>' +
         '<option value="likely" '+(conf==='likely'?'selected':'')+'>Likely</option>' +
         '<option value="hopeful" '+(conf==='hopeful'?'selected':'')+'>Hopeful</option>' +
+      '</select>' +
+    '</div>' +
+    '<div class="form-row"><label>REPEATS</label>' +
+      '<select id="f-inc-recurring">' +
+        '<option value="monthly" '+(recurrence==='monthly'?'selected':'')+'>Recurring monthly — rolls to next month when received</option>' +
+        '<option value="quarterly" '+(recurrence==='quarterly'?'selected':'')+'>Recurring quarterly — rolls forward 3 months when received</option>' +
+        '<option value="once" '+(recurrence==='once'?'selected':'')+'>One-time — doesn’t roll over</option>' +
       '</select>' +
     '</div>' +
     '<div class="form-row"><label><input type="checkbox" id="f-inc-received" '+(i.received?'checked':'')+' style="width:auto;"> Received (already in my account balance)</label></div>' +
@@ -1496,11 +1513,12 @@ function openIncomeForm(existing){
     var amount = num(document.getElementById('f-inc-amount').value);
     var date = document.getElementById('f-inc-date').value;
     var conf = document.getElementById('f-inc-conf').value;
+    var recurrence = document.getElementById('f-inc-recurring').value;
     var received = document.getElementById('f-inc-received').checked;
     if(existing){
-      existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf; existing.received=received;
+      existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf; existing.recurrence=recurrence; existing.received=received;
     } else {
-      DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, received:received });
+      DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, recurrence:recurrence, received:received });
     }
     if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
     save();
@@ -1802,7 +1820,8 @@ document.body.addEventListener('change', function(e){
     if(deductBtn){
       deductBtn.addEventListener('click', function(){
         var acct = DATA.accounts.find(function(a){ return a.id === document.getElementById('f-paybill-account').value; });
-        if(acct) acct.balance = num(acct.balance) - billAmount(bill);
+        var paidAmount = num(document.getElementById('f-paybill-amount').value);
+        if(acct) acct.balance = num(acct.balance) - paidAmount;
         bill.paid = true;
         pendingPaidCheckbox = null;
         closeModal();
@@ -1914,9 +1933,10 @@ function payBillModalHtml(bill){
   }).join('');
   return '<div class="form">' +
     '<div class="section-title" style="margin-top:0;">MARK AS PAID</div>' +
-    '<p class="hint">Deduct ' + fmt(amount) + ' for &ldquo;' + escapeHtml(bill.name) + '&rdquo; from Cash on Hand?</p>' +
+    '<p class="hint">Deduct a payment for &ldquo;' + escapeHtml(bill.name) + '&rdquo; from Cash on Hand?</p>' +
     (hasAccounts
-      ? '<div class="form-row"><label>BANK / ACCOUNT</label><select id="f-paybill-account">'+bankOptionsHtml+'</select></div>'
+      ? '<div class="form-row"><label>PAYMENT AMOUNT</label><input type="number" step="0.01" id="f-paybill-amount" value="'+amount+'" placeholder="0.00"></div>' +
+        '<div class="form-row"><label>BANK / ACCOUNT</label><select id="f-paybill-account">'+bankOptionsHtml+'</select></div>'
       : '<p class="hint">Add an account on the Runway screen to deduct payments.</p>') +
     '<div class="form-actions" style="flex-direction:column;">' +
       (hasAccounts ? '<button class="btn" id="f-paybill-deduct" type="button">Deduct &amp; mark paid</button>' : '') +
@@ -1985,7 +2005,12 @@ document.getElementById('btnReset').addEventListener('click', function(){
     if(b.recurrence === 'monthly'){ b.dueDate = addMonths(b.dueDate, 1); b.paid = false; }
     else if(b.recurrence === 'quarterly'){ b.dueDate = addMonths(b.dueDate, 3); b.paid = false; }
   });
-  DATA.income = DATA.income.filter(function(i){ return !i.received; });
+  DATA.income = DATA.income.filter(function(i){
+    if(!i.received) return true;
+    if(i.recurrence === 'monthly'){ i.expectedDate = addMonths(i.expectedDate, 1); i.received = false; return true; }
+    if(i.recurrence === 'quarterly'){ i.expectedDate = addMonths(i.expectedDate, 3); i.received = false; return true; }
+    return false;
+  });
   save();
 });
 
