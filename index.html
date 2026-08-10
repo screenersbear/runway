@@ -120,14 +120,19 @@ main{
 #screen-bills.active{ padding-bottom: 56px; }
 
 /* A real notebook page's top margin is wider than the line spacing below it —
-   room for a title before the ruling starts. Opaque paper background blanks
-   out the rule lines that would otherwise print through from main's grid;
-   the red margin rule isn't touched since it's drawn to the left of main's
-   padding, outside this block's box. */
+   room for a title before the ruling starts. Bleeds edge-to-edge past main's
+   own padding (negative margin, compensated by matching padding so the text
+   still lands where every other row's text does) so the rule lines are fully
+   blanked out, not just within the content column — a stray rule tick in
+   main's left/right padding gutters would otherwise still show. Redraws the
+   red margin line itself at the same position main draws it, so it keeps
+   running through instead of getting painted over along with the rules. */
 .runway-header{
-  background:var(--paper);
-  padding:22px 0 18px 0;
-  margin-bottom:2px;
+  margin: 0 -16px 2px calc(-1 * (var(--margin-x) + 14px));
+  padding: 22px 16px 18px calc(var(--margin-x) + 14px);
+  background-color: var(--paper);
+  background-image: linear-gradient(to right, transparent 0, transparent var(--margin-x), var(--danger) var(--margin-x), var(--danger) calc(var(--margin-x) + 2px), transparent calc(var(--margin-x) + 2px));
+  background-repeat: no-repeat;
   border-bottom:2px solid var(--ink);
   font-size:22px; font-weight:bold; letter-spacing:1px;
 }
