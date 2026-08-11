@@ -43,40 +43,34 @@ h1,h2,h3,p{margin:0;}
 
 #app{ max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
 
-/* ---------- header (solid, not ruled) ---------- */
+/* ---------- header: persistent notebook top margin, sticky across every screen ----------
+   Same idea as main's ruled area but blank — the red margin rule runs straight
+   through it (redrawn here at the same x-offset main uses, so the two segments
+   line up into one continuous line) and the menu button sits in the gutter
+   that rule creates, left of it, the way it did before this was a title bar. */
 header{
-  padding: 14px var(--margin-x) 10px 16px;
-  border-bottom: 2px solid var(--ink);
-  background:var(--paper);
   position:sticky; top:0; z-index:5;
+  background-color:var(--paper);
+  background-image: linear-gradient(to right, transparent 0, transparent var(--margin-x), var(--danger) var(--margin-x), var(--danger) calc(var(--margin-x) + 2px), transparent calc(var(--margin-x) + 2px));
+  background-repeat:no-repeat;
+  border-bottom: 2px solid var(--ink);
 }
-.header-row{ display:flex; align-items:center; gap:12px; position:relative; }
+.header-row{ display:flex; align-items:center; height:54px; position:relative; }
 .menu-btn{
   flex-shrink:0;
-  width:36px; height:32px; padding:0;
+  width:var(--margin-x); height:32px; padding:0;
   background:none; border:none;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
   cursor:pointer;
 }
 .menu-btn span{ display:block; width:18px; height:2px; background:var(--ink); }
 .menu-btn:active{ background:rgba(70,110,200,0.15); }
-header h1{
-  color:var(--danger);
-  font-size:27px;
-  letter-spacing:4px;
-  line-height:32px;
-  margin:0;
-  white-space:nowrap;
-  overflow:hidden;
-  min-width:0;
-  flex:1 1 auto;
-}
 .menu-dropdown{
   display:none;
   flex-direction:column;
   position:absolute;
-  top:38px; left:0;
-  width:150px;
+  top:100%; left:0;
+  width:180px;
   background:var(--paper);
   border:1.5px solid var(--ink);
   z-index:10;
@@ -119,30 +113,6 @@ main{
 .screen.active{ display:block; }
 #screen-bills.active{ padding-bottom: 56px; }
 
-/* A real notebook page's top margin is wider than the line spacing below it —
-   room for a title before the ruling starts. Bleeds edge-to-edge past main's
-   own padding (negative margin, compensated by matching padding so the text
-   still lands where every other row's text does) so the rule lines are fully
-   blanked out, not just within the content column — a stray rule tick in
-   main's left/right padding gutters would otherwise still show. Redraws the
-   red margin line itself at the same position main draws it, so it keeps
-   running through instead of getting painted over along with the rules. */
-.runway-header{
-  margin: 0 -16px 2px calc(-1 * (var(--margin-x) + 14px));
-  padding: 22px 16px 18px calc(var(--margin-x) + 14px);
-  background-color: var(--paper);
-  background-image: linear-gradient(to right, transparent 0, transparent var(--margin-x), var(--danger) var(--margin-x), var(--danger) calc(var(--margin-x) + 2px), transparent calc(var(--margin-x) + 2px));
-  background-repeat: no-repeat;
-  border-bottom:2px solid var(--ink);
-  font-size:22px; font-weight:bold; letter-spacing:1px;
-}
-.runway-header-input{
-  width:52px; border:none; border-bottom:1.5px solid var(--ink);
-  background:transparent; text-align:center;
-  font-size:22px; font-weight:bold; color:var(--ink);
-}
-.runway-header-input:focus{ outline:none; border-bottom-color:var(--rule-solid); }
-
 /* text rows sit ABOVE the rule, not on it */
 .line{
   line-height: var(--row);
@@ -153,8 +123,21 @@ main{
 .line2{ line-height: calc(var(--row) * 2); }
 
 .label{ font-size:12px; letter-spacing:1.5px; color:var(--ink); opacity:0.6; line-height:var(--row); }
+.label.emphasis{ opacity:1; font-weight:bold; }
 .value{ font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold; }
 .value.small{ font-size:20px; line-height:var(--row); }
+
+.window-days-select{
+  border:none; border-bottom:1.5px solid var(--ink); border-radius:0;
+  background:transparent; -webkit-appearance:none; appearance:none;
+  font-family:inherit; font-size:15px; font-weight:bold; color:var(--ink);
+  padding:2px 18px 4px 2px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%), linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: right 6px top 10px, right 1px top 10px;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+.window-days-select:focus{ outline:none; border-bottom-color:var(--rule-solid); }
 
 .collapse-toggle{ cursor:pointer; display:flex; align-items:baseline; gap:6px; }
 .collapse-toggle:active{ background:rgba(70,110,200,0.12); }
@@ -373,7 +356,6 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <button id="menuBtn" class="menu-btn" type="button" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
-      <h1>LET THE KING SEE</h1>
       <div id="menuDropdown" class="menu-dropdown">
         <button id="btnExportMonthly" type="button">Export payment history</button>
         <button id="btnAppData" type="button">Import/Export app data</button>
@@ -386,40 +368,47 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <!-- ================= SCREEN A: RUNWAY ================= -->
     <section id="screen-runway" class="screen active">
 
-      <div class="runway-header">
-        next <input type="number" id="rw-windowDays" min="1" class="runway-header-input"> days
-      </div>
-
-      <div class="label line info-toggle" data-target="info-spendable">CASH ON HAND <span class="info-dot">&#9432;</span></div>
+      <div class="label line emphasis info-toggle" data-target="info-spendable">CASH ON HAND <span class="info-dot">&#9432;</span></div>
       <div class="info-box" id="info-spendable">Every account that isn't marked as a backstop, added together. This is cash you can use today.</div>
       <div class="value" id="rw-spendable">$0.00</div>
 
-      <div id="rw-accounts-list" class="list"></div>
-      <button class="add-btn" id="rw-addAccountBtn" type="button">+ Add account</button>
-      <div id="rw-accountForm"></div>
-
-      <div class="section-title info-toggle" data-target="info-bills" style="margin-top:18px;">BILLS DUE <span class="info-dot">&#9432;</span></div>
-      <div class="info-box" id="info-bills">Unpaid bills due within the window set at the top of the page, using whichever amount &mdash; full or minimum &mdash; you've set for each one.</div>
-      <div class="line">
-        due in next <span id="rw-windowDaysEcho">30</span> days &mdash; <strong id="rw-billsSum">$0.00</strong>
-      </div>
       <div class="line" style="padding-top:2px;">
-        bills paid <strong id="rw-billsPaidFrac">$0.00 / $0.00</strong>
+        next <select id="rw-windowDaysSelect" class="window-days-select"></select>
       </div>
 
-      <div class="section-title" style="margin-top:14px;">LEFTOVER</div>
-      <div class="two-col">
-        <div>
-          <div class="label info-toggle" data-target="info-confirmed">WITH EXPECTED<br>INCOME <span class="info-dot">&#9432;</span></div>
-          <div class="value small" id="rw-confirmed">$0.00</div>
+      <div class="section-title collapse-toggle" data-target="rw-banks" style="margin-top:14px;">BANKS <span class="muted" id="count-rw-banks"></span><span class="collapse-arrow" id="arrow-rw-banks">&#9662;</span></div>
+      <div id="rw-banks" class="list">
+        <div id="rw-accounts-list" class="list"></div>
+        <button class="add-btn" id="rw-addAccountBtn" type="button">+ Add account</button>
+        <div id="rw-accountForm"></div>
+      </div>
+
+      <div class="section-title collapse-toggle" data-target="rw-billsdue" style="margin-top:18px;">BILLS DUE <span class="info-dot info-toggle" data-target="info-bills">&#9432;</span><span class="collapse-arrow" id="arrow-rw-billsdue">&#9662;</span></div>
+      <div id="rw-billsdue" class="list">
+        <div class="info-box" id="info-bills">Unpaid bills due within the window set above, using whichever amount &mdash; full or minimum &mdash; you've set for each one.</div>
+        <div class="line">
+          due in next <span id="rw-windowDaysEcho">30</span> days &mdash; <strong id="rw-billsSum">$0.00</strong>
         </div>
-        <div>
-          <div class="label info-toggle" data-target="info-likely">WITH LIKELY<br>INCOME <span class="info-dot">&#9432;</span></div>
-          <div class="value small" id="rw-likely">$0.00</div>
+        <div class="line" style="padding-top:2px;">
+          bills paid <strong id="rw-billsPaidFrac">$0.00 / $0.00</strong>
         </div>
       </div>
-      <div class="info-box" id="info-confirmed">Spendable cash, plus income you're certain about and due within your window, minus bills due in that window. The number you can trust.</div>
-      <div class="info-box" id="info-likely">Confirmed leftover, plus income you consider likely but not yet guaranteed.</div>
+
+      <div class="section-title collapse-toggle" data-target="rw-leftover" style="margin-top:14px;">LEFTOVER <span class="collapse-arrow" id="arrow-rw-leftover">&#9662;</span></div>
+      <div id="rw-leftover" class="list">
+        <div class="two-col">
+          <div>
+            <div class="label info-toggle" data-target="info-confirmed">WITH EXPECTED<br>INCOME <span class="info-dot">&#9432;</span></div>
+            <div class="value small" id="rw-confirmed">$0.00</div>
+          </div>
+          <div>
+            <div class="label info-toggle" data-target="info-likely">WITH LIKELY<br>INCOME <span class="info-dot">&#9432;</span></div>
+            <div class="value small" id="rw-likely">$0.00</div>
+          </div>
+        </div>
+        <div class="info-box" id="info-confirmed">Spendable cash, plus income you're certain about and due within your window, minus bills due in that window. The number you can trust.</div>
+        <div class="info-box" id="info-likely">Confirmed leftover, plus income you consider likely but not yet guaranteed.</div>
+      </div>
 
       <div class="warning" id="rw-floorWarning" style="display:none;"></div>
 
@@ -852,17 +841,6 @@ function billFloorFlag(bill){
   return 'Paying this in full dips you below your floor — consider minimum, or wait for income.';
 }
 
-function fitHeaderTitle(){
-  var el = document.querySelector('header h1');
-  if(!el) return;
-  var size = 27;
-  el.style.fontSize = size + 'px';
-  while(el.scrollWidth > el.clientWidth && size > 14){
-    size -= 1;
-    el.style.fontSize = size + 'px';
-  }
-}
-
 function fitSpendableCash(){
   var el = document.getElementById('rw-spendable');
   var size = 58;
@@ -874,11 +852,26 @@ function fitSpendableCash(){
 }
 
 /* ============ RENDER: RUNWAY ============ */
+var WINDOW_DAYS_PRESETS = [7, 15, 30];
+function windowDaysSelectHtml(){
+  var days = windowDays();
+  var optionsHtml = WINDOW_DAYS_PRESETS.map(function(d){
+    return '<option value="'+d+'" '+(days===d?'selected':'')+'>'+d+' days</option>';
+  }).join('');
+  if(WINDOW_DAYS_PRESETS.indexOf(days) === -1){
+    optionsHtml += '<option value="'+days+'" selected>'+days+' days</option>';
+  }
+  optionsHtml += '<option value="custom">Custom&hellip;</option>';
+  return optionsHtml;
+}
+
 function renderRunway(){
   document.getElementById('rw-spendable').textContent = fmt(spendableCash());
   fitSpendableCash();
-  document.getElementById('rw-windowDays').value = windowDays();
+  document.getElementById('rw-windowDaysSelect').innerHTML = windowDaysSelectHtml();
   document.getElementById('rw-windowDaysEcho').textContent = windowDays();
+
+  document.getElementById('count-rw-banks').textContent = '(' + DATA.accounts.length + ')';
 
   var list = document.getElementById('rw-accounts-list');
   var days = windowDays();
@@ -1218,7 +1211,8 @@ document.querySelectorAll('.collapse-toggle').forEach(function(el){
 
 /* ============ INFO TOGGLES ============ */
 document.querySelectorAll('.info-toggle').forEach(function(el){
-  el.addEventListener('click', function(){
+  el.addEventListener('click', function(e){
+    e.stopPropagation();
     var box = document.getElementById(el.dataset.target);
     if(box) box.classList.toggle('open');
   });
@@ -1741,10 +1735,37 @@ document.getElementById('rw-addAccountBtn').addEventListener('click', function()
 document.getElementById('addBillBannerBtn').addEventListener('click', function(){ openBillForm(null); });
 document.getElementById('addIncomeBtn').addEventListener('click', function(){ openIncomeForm(null); });
 
-document.getElementById('rw-windowDays').addEventListener('change', function(e){
+document.getElementById('rw-windowDaysSelect').addEventListener('change', function(e){
+  if(e.target.value === 'custom'){
+    openCustomWindowDaysPopup();
+    return;
+  }
   DATA.billWindowDays = Math.max(1, Math.round(num(e.target.value)) || 30);
   save();
 });
+
+function openCustomWindowDaysPopup(){
+  document.getElementById('modalCard').innerHTML =
+    '<div class="form">' +
+      '<div class="section-title" style="margin-top:0;">CUSTOM WINDOW</div>' +
+      '<div class="form-row"><label>DAYS</label><input type="number" id="f-customdays" min="1" value="'+windowDays()+'" placeholder="e.g. 45"></div>' +
+      '<div class="form-actions">' +
+        '<button class="btn" id="f-customdays-save" type="button">Save</button>' +
+        '<button class="btn secondary" id="f-customdays-cancel" type="button">Cancel</button>' +
+      '</div>' +
+    '</div>';
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('f-customdays-save').addEventListener('click', function(){
+    DATA.billWindowDays = Math.max(1, Math.round(num(document.getElementById('f-customdays').value)) || 30);
+    closeModal();
+    save();
+  });
+  document.getElementById('f-customdays-cancel').addEventListener('click', function(){
+    closeModal();
+    renderRunway();
+  });
+  bindEnterToSave(document.getElementById('modalCard'), 'f-customdays-save', null, true);
+}
 
 document.getElementById('floor-input').addEventListener('change', function(e){
   DATA.floatFloor = num(e.target.value);
@@ -2108,7 +2129,6 @@ if('serviceWorker' in navigator){
 
 /* ============ INIT ============ */
 renderAll();
-fitHeaderTitle();
 maybeShowWeeklyBillsPopup();
 
 })();
