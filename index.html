@@ -47,7 +47,8 @@ h1,h2,h3,p{margin:0;}
    Same idea as main's ruled area but blank — the red margin rule runs straight
    through it (redrawn here at the same x-offset main uses, so the two segments
    line up into one continuous line) and the menu button sits in the gutter
-   that rule creates, left of it, the way it did before this was a title bar. */
+   that rule creates, left of it. The title sits to the right of the rule,
+   same as content rows below it do. */
 header{
   position:sticky; top:0; z-index:5;
   background-color:var(--paper);
@@ -55,7 +56,7 @@ header{
   background-repeat:no-repeat;
   border-bottom: 2px solid var(--ink);
 }
-.header-row{ display:flex; align-items:center; height:54px; position:relative; }
+.header-row{ display:flex; align-items:center; height:54px; position:relative; padding-right:16px; }
 .menu-btn{
   flex-shrink:0;
   width:var(--margin-x); height:32px; padding:0;
@@ -65,6 +66,17 @@ header{
 }
 .menu-btn span{ display:block; width:18px; height:2px; background:var(--ink); }
 .menu-btn:active{ background:rgba(70,110,200,0.15); }
+header h1{
+  color:var(--danger);
+  font-size:27px;
+  letter-spacing:4px;
+  line-height:32px;
+  margin:0 0 0 14px;
+  white-space:nowrap;
+  overflow:hidden;
+  min-width:0;
+  flex:1 1 auto;
+}
 .menu-dropdown{
   display:none;
   flex-direction:column;
@@ -359,6 +371,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <button id="menuBtn" class="menu-btn" type="button" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
+      <h1>LET THE KING SEE</h1>
       <div id="menuDropdown" class="menu-dropdown">
         <button id="btnExportMonthly" type="button">Export payment history</button>
         <button id="btnAppData" type="button">Import/Export app data</button>
@@ -842,6 +855,17 @@ function billFloorFlag(bill){
   var delta = num(bill.amountFull) - num(bill.amountMin);
   if(delta <= 0) return null;
   return 'Paying this in full dips you below your floor — consider minimum, or wait for income.';
+}
+
+function fitHeaderTitle(){
+  var el = document.querySelector('header h1');
+  if(!el) return;
+  var size = 27;
+  el.style.fontSize = size + 'px';
+  while(el.scrollWidth > el.clientWidth && size > 14){
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
 }
 
 function fitSpendableCash(){
@@ -2132,6 +2156,7 @@ if('serviceWorker' in navigator){
 
 /* ============ INIT ============ */
 renderAll();
+fitHeaderTitle();
 maybeShowWeeklyBillsPopup();
 
 })();
