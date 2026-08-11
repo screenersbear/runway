@@ -124,7 +124,10 @@ main{
 
 .label{ font-size:12px; letter-spacing:1.5px; color:var(--ink); opacity:0.6; line-height:var(--row); }
 .label.emphasis{ opacity:1; font-weight:bold; }
-.value{ font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold; }
+/* Two rule-rows tall, so a rule always falls somewhere inside its box unless
+   masked — opaque paper background keeps it from cutting through the digits,
+   same trick used for the header banner. */
+.value{ font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold; background:var(--paper); }
 .value.small{ font-size:20px; line-height:var(--row); }
 
 .window-days-select{
@@ -372,7 +375,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
       <div class="info-box" id="info-spendable">Every account that isn't marked as a backstop, added together. This is cash you can use today.</div>
       <div class="value" id="rw-spendable">$0.00</div>
 
-      <div class="line" style="padding-top:2px;">
+      <div class="line" style="margin-top:var(--row);">
         next <select id="rw-windowDaysSelect" class="window-days-select"></select>
       </div>
 
