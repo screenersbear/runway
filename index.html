@@ -204,6 +204,7 @@ main{
 .acct-name{ flex:1; font-weight:bold; }
 .acct-tag{ font-size:11px; margin-left:6px; }
 .acct-withdrawals{ font-size:12.5px; opacity:0.75; line-height:18px; padding-bottom:2px; }
+.acct-withdrawals .over{ color:var(--danger); }
 .acct-withdrawals + .item-actions{ margin-top:2px; margin-bottom:16px; }
 
 /* ---------- modal (account edit) ---------- */
@@ -904,11 +905,13 @@ function renderRunway(){
   var days = windowDays();
   var rows = DATA.accounts.map(function(a){
     var tag = a.excluded ? '<span class="acct-tag muted">backstop — not counted</span>' : '';
+    var withdrawals = acctWithdrawalsSum(a.id, days);
+    var overBalance = withdrawals > num(a.balance);
     return '<div class="acct-row' + (a.excluded?' excluded':'') + '" data-id="'+a.id+'">' +
       '<span class="acct-name">' + escapeHtml(a.name) + tag + '</span>' +
       '<span class="acct-amt">' + fmt(a.balance) + '</span>' +
       '</div>' +
-      '<div class="acct-withdrawals">expected withdrawals in the next ' + days + ' days &mdash; <strong>' + fmt(acctWithdrawalsSum(a.id, days)) + '</strong></div>' +
+      '<div class="acct-withdrawals">expected withdrawals in the next ' + days + ' days &mdash; <strong' + (overBalance ? ' class="over"' : '') + '>' + fmt(withdrawals) + '</strong></div>' +
       '<div class="item-actions" data-id="'+a.id+'">' +
         '<button data-act="edit-acct" data-id="'+a.id+'" type="button">edit</button>' +
         '<button data-act="del-acct" data-id="'+a.id+'" type="button">delete</button>' +
