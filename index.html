@@ -137,9 +137,17 @@ main{
 .label{ font-size:12px; letter-spacing:1.5px; color:var(--ink); opacity:0.6; line-height:var(--row); }
 .label.emphasis{ opacity:1; font-weight:bold; }
 /* Two rule-rows tall, so a rule always falls somewhere inside its box unless
-   masked — opaque paper background keeps it from cutting through the digits,
-   same trick used for the header banner. */
-.value{ font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold; background:var(--paper); }
+   masked. A block background masked the whole row (looked like a white card
+   sitting on the page) — a tight paper-colored halo around the digits keeps
+   the rule off the glyphs themselves while still showing the ruled lines
+   everywhere else in the row, same as any other line. */
+.value{
+  font-size:48px; line-height: calc(var(--row) * 2); font-weight:bold;
+  text-shadow:
+    -2px -2px 0 var(--paper), 0 -2px 0 var(--paper), 2px -2px 0 var(--paper),
+    -2px  0   0 var(--paper),                         2px  0   0 var(--paper),
+    -2px  2px 0 var(--paper), 0  2px 0 var(--paper), 2px  2px 0 var(--paper);
+}
 .value.small{ font-size:20px; line-height:var(--row); }
 
 .window-days-select{
@@ -1928,6 +1936,7 @@ document.body.addEventListener('change', function(e){
         pendingPaidCheckbox = null;
         closeModal();
         save();
+        maybeOfferStartNextMonth();
       });
     }
     document.getElementById('f-paybill-skip').addEventListener('click', function(){
@@ -1935,6 +1944,7 @@ document.body.addEventListener('change', function(e){
       pendingPaidCheckbox = null;
       closeModal();
       save();
+      maybeOfferStartNextMonth();
     });
     document.getElementById('f-paybill-cancel').addEventListener('click', function(){
       closeModal();
@@ -2099,8 +2109,7 @@ function recordMonthlyPayments(){
   DATA.paymentHistory.push({ id: uid(), closedAt: isoDate(todayMid()), entries: entries, incomeEntries: incomeEntries });
 }
 
-document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
+function startNextMonth(){
   recordMonthlyPayments();
   DATA.bills.forEach(function(b){
     if(!b.paid) return;
@@ -2114,7 +2123,18 @@ document.getElementById('btnReset').addEventListener('click', function(){
     return false;
   });
   save();
+}
+
+document.getElementById('btnReset').addEventListener('click', function(){
+  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
+  startNextMonth();
 });
+
+function maybeOfferStartNextMonth(){
+  if(DATA.bills.length && DATA.bills.every(function(b){ return b.paid; })){
+    if(confirm('That was the last pending bill — everything is now marked paid. Start next month now?')) startNextMonth();
+  }
+}
 
 /* ============ WEEKLY BILLS-DUE POPUP ============ */
 function billsDueThisWeek(){
