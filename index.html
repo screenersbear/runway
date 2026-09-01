@@ -544,7 +544,7 @@ var STORAGE_KEY = 'runway_v1';
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
 function defaultData(){
-  return { accounts:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30, priorityManualOverride:false, paymentHistory:[], lastWeeklyPopupWeek:null };
+  return { accounts:[], creditCards:[], bills:[], income:[], debts:[], floatFloor:0, billWindowDays:30, priorityManualOverride:false, paymentHistory:[], lastWeeklyPopupWeek:null };
 }
 
 function normalizeDebt(d){
@@ -677,6 +677,8 @@ function billPaidFromLabel(b){
   if(b.bankAccountId){
     var acct = DATA.accounts.find(function(a){ return a.id === b.bankAccountId; });
     if(acct) return acct.name;
+    var card = DATA.creditCards.find(function(c){ return c.id === b.bankAccountId; });
+    if(card) return card.name;
   }
   return 'None';
 }
@@ -913,9 +915,7 @@ function renderRunway(){
   var list = document.getElementById('rw-accounts-list');
   var days = windowDays();
   var rows = DATA.accounts.map(function(a){
-    var tag = a.acctType === 'creditCard'
-      ? '<span class="acct-tag muted">credit card — not counted</span>'
-      : (a.excluded ? '<span class="acct-tag muted">backstop — not counted</span>' : '');
+    var tag = a.excluded ? '<span class="acct-tag muted">backstop — not counted</span>' : '';
     var withdrawals = acctWithdrawalsSum(a.id, days);
     var overBalance = withdrawals > num(a.balance);
     return '<div class="acct-row' + (a.excluded?' excluded':'') + '" data-id="'+a.id+'">' +
@@ -1367,6 +1367,9 @@ function billBankOptionsHtml(selectedId){
     DATA.accounts.map(function(a){
       return '<option value="'+a.id+'" '+(selectedId===a.id?'selected':'')+'>'+escapeHtml(a.name)+'</option>';
     }).join('') +
+    DATA.creditCards.map(function(c){
+      return '<option value="'+c.id+'" '+(selectedId===c.id?'selected':'')+'>'+escapeHtml(c.name)+'</option>';
+    }).join('') +
     '<option value="__addcard__">+ Add credit card&hellip;</option>';
 }
 
@@ -1483,8 +1486,8 @@ function openBillForm(existing){
       formEl.innerHTML =
         '<div class="form">' +
           '<div class="section-title" style="margin-top:0;">ADD CREDIT CARD</div>' +
+          '<p class="hint">Just a name to pick from when a bill is paid by card &mdash; it won\'t show up as an account or count toward Cash on Hand.</p>' +
           '<div class="form-row"><label>NAME</label><input type="text" id="f-card-name" placeholder="e.g. Visa"></div>' +
-          '<div class="form-row"><label>CURRENT BALANCE</label><input type="number" step="0.01" id="f-card-balance" placeholder="0.00"></div>' +
           '<div class="form-actions">' +
             '<button class="btn" id="f-card-save" type="button">Save</button>' +
             '<button class="btn secondary" id="f-card-cancel" type="button">Cancel</button>' +
@@ -1493,10 +1496,10 @@ function openBillForm(existing){
       document.getElementById('f-card-save').addEventListener('click', function(){
         var cardName = document.getElementById('f-card-name').value.trim();
         if(!cardName) return;
-        var newAccount = { id: uid(), name: cardName, balance: num(document.getElementById('f-card-balance').value), excluded: true, acctType: 'creditCard' };
-        DATA.accounts.push(newAccount);
+        var newCard = { id: uid(), name: cardName };
+        DATA.creditCards.push(newCard);
         save();
-        savedState.bankAccountId = newAccount.id;
+        savedState.bankAccountId = newCard.id;
         render(savedState);
       });
       document.getElementById('f-card-cancel').addEventListener('click', function(){
