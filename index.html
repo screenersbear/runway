@@ -1310,6 +1310,7 @@ function accountFormHtml(a){
 }
 
 var pendingPaidCheckbox = null;
+var pendingReceivedCheckbox = null;
 
 function closeModal(){
   document.getElementById('modalOverlay').classList.remove('open');
@@ -1317,6 +1318,10 @@ function closeModal(){
   if(pendingPaidCheckbox){
     pendingPaidCheckbox.checked = false;
     pendingPaidCheckbox = null;
+  }
+  if(pendingReceivedCheckbox){
+    pendingReceivedCheckbox.checked = false;
+    pendingReceivedCheckbox = null;
   }
 }
 
@@ -1612,7 +1617,7 @@ function incomeFormHtml(i){
         '<option value="once" '+(recurrence==='once'?'selected':'')+'>One-time — doesn’t roll over</option>' +
       '</select>' +
     '</div>' +
-    '<div class="form-row"><label><input type="checkbox" id="f-inc-received" '+(i.received?'checked':'')+' style="width:auto;"> Received (already in my account balance)</label></div>' +
+    '<div class="form-row"><label><input type="checkbox" id="f-inc-received" '+(i.received?'checked':'')+' style="width:auto;"> Received (you\'ll be asked whether it\'s already in a balance or should be added)</label></div>' +
     '<div class="form-actions">' +
       '<button class="btn" id="f-inc-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-inc-cancel" type="button">Cancel</button>' +
@@ -1620,32 +1625,99 @@ function incomeFormHtml(i){
   '</div>';
 }
 
+function incomeReceivedModalHtml(income){
+  var hasAccounts = DATA.accounts.length > 0;
+  var bankOptionsHtml = DATA.accounts.map(function(a){
+    return '<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>';
+  }).join('');
+  return '<div class="form">' +
+    '<div class="section-title" style="margin-top:0;">MARK AS RECEIVED</div>' +
+    '<p class="hint">Is &ldquo;' + escapeHtml(income.name) + '&rdquo; already in an account balance, or should it be added now?</p>' +
+    (hasAccounts
+      ? '<div class="form-row"><label>AMOUNT</label><input type="number" step="0.01" id="f-increcv-amount" value="'+num(income.amount)+'" placeholder="0.00"></div>' +
+        '<div class="form-row"><label>BANK / ACCOUNT</label><select id="f-increcv-account">'+bankOptionsHtml+'</select></div>'
+      : '<p class="hint">Add an account on the Runway screen to add this amount there.</p>') +
+    '<div class="form-actions" style="flex-direction:column;">' +
+      (hasAccounts ? '<button class="btn" id="f-increcv-add" type="button">Add to balance &amp; mark received</button>' : '') +
+      '<button class="btn secondary" id="f-increcv-skip" type="button">Already in balance</button>' +
+      '<button class="btn secondary" id="f-increcv-cancel" type="button">Cancel</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function openIncomeForm(existing){
   var isModal = !!existing;
   var formEl = isModal ? document.getElementById('modalCard') : document.getElementById('incomeForm');
-  formEl.innerHTML = incomeFormHtml(existing);
-  if(isModal) document.getElementById('modalOverlay').classList.add('open');
 
-  document.getElementById('f-inc-save').addEventListener('click', function(){
-    var name = document.getElementById('f-inc-name').value.trim();
-    if(!name) return;
-    var amount = num(document.getElementById('f-inc-amount').value);
-    var date = document.getElementById('f-inc-date').value;
-    var conf = document.getElementById('f-inc-conf').value;
-    var recurrence = document.getElementById('f-inc-recurring').value;
-    var received = document.getElementById('f-inc-received').checked;
-    if(existing){
-      existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf; existing.recurrence=recurrence; existing.received=received;
-    } else {
-      DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, recurrence:recurrence, received:received });
+  function render(dataForForm){
+    formEl.innerHTML = incomeFormHtml(dataForForm);
+    if(isModal) document.getElementById('modalOverlay').classList.add('open');
+    wire();
+  }
+
+  function currentFormState(overrides){
+    var s = {
+      name: document.getElementById('f-inc-name').value,
+      amount: document.getElementById('f-inc-amount').value,
+      expectedDate: document.getElementById('f-inc-date').value,
+      confidence: document.getElementById('f-inc-conf').value,
+      recurrence: document.getElementById('f-inc-recurring').value,
+      received: document.getElementById('f-inc-received').checked
+    };
+    if(overrides){ for(var k in overrides) s[k] = overrides[k]; }
+    return s;
+  }
+
+  function wire(){
+    if(isModal){
+      document.getElementById('f-inc-received').addEventListener('change', function(e){
+        if(!e.target.checked) return;
+        var savedState = currentFormState({ received: false });
+        document.getElementById('modalCard').innerHTML = incomeReceivedModalHtml(savedState);
+        var addBtn = document.getElementById('f-increcv-add');
+        if(addBtn){
+          addBtn.addEventListener('click', function(){
+            var acct = DATA.accounts.find(function(a){ return a.id === document.getElementById('f-increcv-account').value; });
+            var addAmount = num(document.getElementById('f-increcv-amount').value);
+            if(acct) acct.balance = num(acct.balance) + addAmount;
+            save();
+            savedState.received = true;
+            render(savedState);
+          });
+        }
+        document.getElementById('f-increcv-skip').addEventListener('click', function(){
+          savedState.received = true;
+          render(savedState);
+        });
+        document.getElementById('f-increcv-cancel').addEventListener('click', function(){
+          render(savedState);
+        });
+      });
     }
-    if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
-    save();
-  });
-  document.getElementById('f-inc-cancel').addEventListener('click', function(){
-    if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
-  });
-  bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
+
+    document.getElementById('f-inc-save').addEventListener('click', function(){
+      var name = document.getElementById('f-inc-name').value.trim();
+      if(!name) return;
+      var amount = num(document.getElementById('f-inc-amount').value);
+      var date = document.getElementById('f-inc-date').value;
+      var conf = document.getElementById('f-inc-conf').value;
+      var recurrence = document.getElementById('f-inc-recurring').value;
+      var received = document.getElementById('f-inc-received').checked;
+      if(existing){
+        existing.name=name; existing.amount=amount; existing.expectedDate=date; existing.confidence=conf; existing.recurrence=recurrence; existing.received=received;
+      } else {
+        DATA.income.push({ id:uid(), name:name, amount:amount, expectedDate:date, confidence:conf, recurrence:recurrence, received:received });
+      }
+      if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
+      save();
+    });
+    document.getElementById('f-inc-cancel').addEventListener('click', function(){
+      if(isModal){ closeModal(); } else { closeForm('incomeForm'); }
+    });
+    bindEnterToSave(formEl, 'f-inc-save', function(){ openIncomeForm(null); }, existing);
+  }
+
+  render(existing);
 }
 
 function promoSummaryText(p){
@@ -1988,7 +2060,36 @@ document.body.addEventListener('change', function(e){
   }
   if(e.target.dataset && e.target.dataset.act === 'received'){
     var income = DATA.income.find(function(i){return i.id===e.target.dataset.id;});
-    if(income){ income.received = e.target.checked; save(); }
+    if(!income) return;
+    if(!e.target.checked){
+      income.received = false;
+      save();
+      return;
+    }
+    pendingReceivedCheckbox = e.target;
+    document.getElementById('modalCard').innerHTML = incomeReceivedModalHtml(income);
+    document.getElementById('modalOverlay').classList.add('open');
+    var addBtn = document.getElementById('f-increcv-add');
+    if(addBtn){
+      addBtn.addEventListener('click', function(){
+        var acct = DATA.accounts.find(function(a){ return a.id === document.getElementById('f-increcv-account').value; });
+        var addAmount = num(document.getElementById('f-increcv-amount').value);
+        if(acct) acct.balance = num(acct.balance) + addAmount;
+        income.received = true;
+        pendingReceivedCheckbox = null;
+        closeModal();
+        save();
+      });
+    }
+    document.getElementById('f-increcv-skip').addEventListener('click', function(){
+      income.received = true;
+      pendingReceivedCheckbox = null;
+      closeModal();
+      save();
+    });
+    document.getElementById('f-increcv-cancel').addEventListener('click', function(){
+      closeModal();
+    });
   }
   if(e.target.classList && e.target.classList.contains('f-debt-promo')){
     var row = e.target.closest('.promo-row');
