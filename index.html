@@ -395,7 +395,7 @@ nav#tabbar .tab.active{ opacity:1; font-weight:bold; border-top:3px solid var(--
     <section id="screen-runway" class="screen active">
 
       <div class="label line emphasis info-toggle" data-target="info-spendable">CASH ON HAND <span class="info-dot">&#9432;</span></div>
-      <div class="info-box" id="info-spendable">Every account that isn't marked as a backstop, added together. This is cash you can use today.</div>
+      <div class="info-box" id="info-spendable">Every account you haven't excluded, added together &mdash; credit cards never count. This is cash you can use today.</div>
       <div class="value" id="rw-spendable">$0.00</div>
 
       <div class="line" style="margin-top:var(--row);">
@@ -915,7 +915,9 @@ function renderRunway(){
   var list = document.getElementById('rw-accounts-list');
   var days = windowDays();
   var rows = DATA.accounts.map(function(a){
-    var tag = a.excluded ? '<span class="acct-tag muted">backstop — not counted</span>' : '';
+    var tag = a.acctType === 'creditCard'
+      ? '<span class="acct-tag muted">credit card — not counted</span>'
+      : (a.excluded ? '<span class="acct-tag muted">not counted</span>' : '');
     var withdrawals = acctWithdrawalsSum(a.id, days);
     var overBalance = withdrawals > num(a.balance);
     return '<div class="acct-row' + (a.excluded?' excluded':'') + '" data-id="'+a.id+'">' +
@@ -1301,7 +1303,8 @@ function accountFormHtml(a){
   return '<div class="form">' +
     '<div class="form-row"><label>NAME</label><input type="text" id="f-acct-name" value="'+escapeHtml(a.name||'')+'" placeholder="e.g. BOA checking"></div>' +
     '<div class="form-row"><label>BALANCE</label><input type="number" step="0.01" id="f-acct-balance" value="'+(a.balance!=null?a.balance:'')+'" placeholder="0.00"></div>' +
-    '<div class="form-row"><label><input type="checkbox" id="f-acct-excluded" '+(a.excluded?'checked':'')+' style="width:auto;"> Exclude from spendable cash (backstop)</label></div>' +
+    '<div class="form-row"><label><input type="checkbox" id="f-acct-iscard" '+(a.acctType==='creditCard'?'checked':'')+' style="width:auto;"> This is a credit card</label></div>' +
+    '<div class="form-row"><label><input type="checkbox" id="f-acct-excluded" '+((a.excluded || a.acctType==='creditCard')?'checked':'')+(a.acctType==='creditCard'?' disabled':'')+' style="width:auto;"> Exclude from spendable cash</label></div>' +
     '<div class="form-actions">' +
       '<button class="btn" id="f-acct-save" type="button">Save</button>' +
       '<button class="btn secondary" id="f-acct-cancel" type="button">Cancel</button>' +
@@ -1331,15 +1334,27 @@ function openAccountForm(existing){
   container.innerHTML = accountFormHtml(existing);
   if(isModal) document.getElementById('modalOverlay').classList.add('open');
 
+  // A credit card is never spendable cash, so ticking it locks "exclude" on.
+  var cardBox = document.getElementById('f-acct-iscard');
+  var excludeBox = document.getElementById('f-acct-excluded');
+  cardBox.addEventListener('change', function(){
+    if(cardBox.checked){ excludeBox.checked = true; excludeBox.disabled = true; }
+    else { excludeBox.disabled = false; }
+  });
+
   document.getElementById('f-acct-save').addEventListener('click', function(){
     var name = document.getElementById('f-acct-name').value.trim();
     if(!name) return;
     var balance = num(document.getElementById('f-acct-balance').value);
-    var excluded = document.getElementById('f-acct-excluded').checked;
+    var isCard = cardBox.checked;
+    var excluded = isCard || excludeBox.checked;
     if(existing){
       existing.name = name; existing.balance = balance; existing.excluded = excluded;
+      if(isCard){ existing.acctType = 'creditCard'; } else { delete existing.acctType; }
     } else {
-      DATA.accounts.push({ id: uid(), name:name, balance:balance, excluded:excluded });
+      var acct = { id: uid(), name:name, balance:balance, excluded:excluded };
+      if(isCard) acct.acctType = 'creditCard';
+      DATA.accounts.push(acct);
     }
     if(isModal){ closeModal(); } else { closeForm('rw-accountForm'); }
     save();
