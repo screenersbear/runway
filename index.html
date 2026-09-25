@@ -2251,10 +2251,11 @@ function recordMonthlyPayments(){
   DATA.paymentHistory.push({ id: uid(), closedAt: isoDate(todayMid()), entries: entries, incomeEntries: incomeEntries });
 }
 
-/* What an unpaid, overdue recurring bill leaves behind when it rolls forward:
+/* What an unpaid recurring bill leaves behind when it rolls forward:
    a one-time copy at the old due date, so what's still owed stays visible
-   (badged "previous month") instead of the bill silently lagging a month
-   behind. The original keeps its id and any linked debt and moves on. */
+   (badged "previous month") next to the new month's entry instead of the bill
+   silently lagging a month behind. The original keeps its id and any linked
+   debt and moves on. */
 function carriedOverCopy(b){
   return { id:uid(), name:b.name, type:b.type, amountFull:b.amountFull, amountMin:b.amountMin, dueDate:b.dueDate,
     payMode:b.payMode, customAmount:b.customAmount, recurrence:'once', paid:false, bankAccountId:b.bankAccountId,
@@ -2271,14 +2272,15 @@ function startNextMonth(){
     var step = b.recurrence === 'monthly' ? 1 : (b.recurrence === 'quarterly' ? 3 : 0);
     if(!step) return;
     if(b.paid){ b.dueDate = addMonths(b.dueDate, step); b.paid = false; return; }
-    // Unpaid: only occurrences already past due belong to the month being
-    // closed. Bills still ahead of today are next month's and stay put.
-    // One copy per missed occurrence, until the bill sits at its next upcoming date.
+    // Unpaid: every unpaid recurring bill leaves its current occurrence behind
+    // and rolls on, whether or not the due date has passed yet. If it's months
+    // overdue, keep going — one copy per missed occurrence — until the bill
+    // sits at a date that hasn't passed.
     var guard = 0;
-    while(b.dueDate && daysUntil(b.dueDate) < 0 && guard++ < 24){
+    do {
       carried.push(carriedOverCopy(b));
       b.dueDate = addMonths(b.dueDate, step);
-    }
+    } while(b.dueDate && daysUntil(b.dueDate) < 0 && ++guard < 24);
   });
   DATA.bills = DATA.bills.concat(carried);
   DATA.income = DATA.income.filter(function(i){
@@ -2291,7 +2293,7 @@ function startNextMonth(){
 }
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. Recurring bills that are unpaid and already past due roll forward too, leaving a "previous month" copy behind for what you still owe. Bills not yet due and one-time bills are left as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
+  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. Unpaid recurring bills roll forward too: the unpaid one stays visible as a "previous month" item at its current due date, and the recurring bill moves to the new month\'s date as a separate item. One-time bills are left as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
   startNextMonth();
 });
 
