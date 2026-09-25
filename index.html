@@ -993,7 +993,7 @@ function billRowHtml(b){
   var dueSoon = !b.paid && d <= 5;
   var overdue = !b.paid && d < 0;
   var badge = dueSoon ? '<span class="badge due-soon">DUE ' + (d<0 ? 'OVERDUE' : (d+'d')) + '</span>' : '';
-  var onceBadge = b.recurrence === 'once' ? '<span class="badge onetime">ONE-TIME</span>' : (b.recurrence === 'quarterly' ? '<span class="badge onetime">QUARTERLY</span>' : '');
+  var onceBadge = b.carriedOver ? '<span class="badge reverts">PREVIOUS MONTH</span>' : (b.recurrence === 'once' ? '<span class="badge onetime">ONE-TIME</span>' : (b.recurrence === 'quarterly' ? '<span class="badge onetime">QUARTERLY</span>' : ''));
   var debtBadge = b.linkedDebtId ? '<span class="badge onetime">&#8594; TRACKED AS DEBT</span>' : '';
   var paidFromText = billPaidFromLabel(b);
   var paidFromBadge = '<span class="badge ' + (paidFromText === 'None' ? 'paidfrom-none' : 'paidfrom') + '">PAID FROM: ' + escapeHtml(paidFromText.toUpperCase()) + '</span>';
@@ -1384,7 +1384,7 @@ function billFormHtml(b){
   var promos = (linkedDebt && linkedDebt.promos) ? linkedDebt.promos : [];
   var asDebtChecked = (b.wantsDebt !== undefined && b.wantsDebt !== null)
     ? b.wantsDebt
-    : (linkedDebt ? (linkedDebt.trackedInPriority !== false) : isDebtBillType(type));
+    : (linkedDebt ? (linkedDebt.trackedInPriority !== false) : (!b.carriedOver && isDebtBillType(type)));
   var isDebt = asDebtChecked;
 
   var balanceFieldHtml = '<div class="form-row"><label>'+(isDebt?'BALANCE':'FULL AMOUNT')+'</label><input type="number" step="0.01" id="f-bill-full" value="'+(b.amountFull!=null?b.amountFull:'')+'" placeholder="0.00"></div>';
@@ -1565,6 +1565,8 @@ function openBillForm(existing){
         existing.dueDate=due; existing.payMode=mode; existing.customAmount=customAmount;
         existing.recurrence=recurrence; existing.paid=paid;
         existing.bankAccountId=bankAccountId; existing.autopay=autopay; existing.apr=apr;
+        // A leftover copy the user turns into a recurring bill is a real bill now, not a reminder.
+        if(recurrence !== 'once') delete existing.carriedOver;
         bill = existing;
       } else {
         bill = { id:uid(), name:name, type:type, amountFull:full, amountMin:min, dueDate:due, payMode:mode, customAmount:customAmount, recurrence:recurrence, paid:paid, bankAccountId:bankAccountId, autopay:autopay, apr:apr, linkedDebtId:null };
@@ -2249,13 +2251,36 @@ function recordMonthlyPayments(){
   DATA.paymentHistory.push({ id: uid(), closedAt: isoDate(todayMid()), entries: entries, incomeEntries: incomeEntries });
 }
 
+/* What an unpaid, overdue recurring bill leaves behind when it rolls forward:
+   a one-time copy at the old due date, so what's still owed stays visible
+   (badged "previous month") instead of the bill silently lagging a month
+   behind. The original keeps its id and any linked debt and moves on. */
+function carriedOverCopy(b){
+  return { id:uid(), name:b.name, type:b.type, amountFull:b.amountFull, amountMin:b.amountMin, dueDate:b.dueDate,
+    payMode:b.payMode, customAmount:b.customAmount, recurrence:'once', paid:false, bankAccountId:b.bankAccountId,
+    autopay:b.autopay, apr:null, linkedDebtId:null, carriedOver:true };
+}
+
 function startNextMonth(){
   recordMonthlyPayments();
+  // A leftover copy that got paid has now been recorded to history — it was
+  // only ever a reminder of an unpaid occurrence, so it's done.
+  DATA.bills = DATA.bills.filter(function(b){ return !(b.carriedOver && b.paid); });
+  var carried = [];
   DATA.bills.forEach(function(b){
-    if(!b.paid) return;
-    if(b.recurrence === 'monthly'){ b.dueDate = addMonths(b.dueDate, 1); b.paid = false; }
-    else if(b.recurrence === 'quarterly'){ b.dueDate = addMonths(b.dueDate, 3); b.paid = false; }
+    var step = b.recurrence === 'monthly' ? 1 : (b.recurrence === 'quarterly' ? 3 : 0);
+    if(!step) return;
+    if(b.paid){ b.dueDate = addMonths(b.dueDate, step); b.paid = false; return; }
+    // Unpaid: only occurrences already past due belong to the month being
+    // closed. Bills still ahead of today are next month's and stay put.
+    // One copy per missed occurrence, until the bill sits at its next upcoming date.
+    var guard = 0;
+    while(b.dueDate && daysUntil(b.dueDate) < 0 && guard++ < 24){
+      carried.push(carriedOverCopy(b));
+      b.dueDate = addMonths(b.dueDate, step);
+    }
   });
+  DATA.bills = DATA.bills.concat(carried);
   DATA.income = DATA.income.filter(function(i){
     if(!i.received) return true;
     if(i.recurrence === 'monthly'){ i.expectedDate = addMonths(i.expectedDate, 1); i.received = false; return true; }
@@ -2266,7 +2291,7 @@ function startNextMonth(){
 }
 
 document.getElementById('btnReset').addEventListener('click', function(){
-  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. One-time bills and anything still unpaid are left exactly as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
+  if(!confirm('Start next month: paid monthly bills roll their due date forward one month, paid quarterly bills roll forward three months, and both unmark as paid. Recurring bills that are unpaid and already past due roll forward too, leaving a "previous month" copy behind for what you still owe. Bills not yet due and one-time bills are left as-is. Received income is cleared out; income still pending is left as-is. Everything currently marked paid or received is recorded to your payment history.')) return;
   startNextMonth();
 });
 
