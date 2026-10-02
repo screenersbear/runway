@@ -1603,6 +1603,7 @@ function openBillForm(existing){
         if(oldDebt) oldDebt.trackedInPriority = false;
         bill.linkedDebtId = null;
       }
+      settleLaggingRecurring(bill);
       if(isModal){ closeModal(); } else { closeForm('billForm'); }
       save();
     });
@@ -2061,6 +2062,7 @@ document.body.addEventListener('change', function(e){
         var paidAmount = num(document.getElementById('f-paybill-amount').value);
         if(acct) acct.balance = num(acct.balance) - paidAmount;
         bill.paid = true;
+        settleLaggingRecurring(bill);
         pendingPaidCheckbox = null;
         closeModal();
         save();
@@ -2069,6 +2071,7 @@ document.body.addEventListener('change', function(e){
     }
     document.getElementById('f-paybill-skip').addEventListener('click', function(){
       bill.paid = true;
+      settleLaggingRecurring(bill);
       pendingPaidCheckbox = null;
       closeModal();
       save();
@@ -2277,6 +2280,38 @@ function carriedOverCopy(b){
     autopay:b.autopay, apr:null, linkedDebtId:null, carriedOver:true };
 }
 
+function monthIndex(dateStr){
+  var p = dateStr.split('-');
+  return Number(p[0]) * 12 + Number(p[1]) - 1;
+}
+
+/* Runs whenever a bill is marked paid. A recurring bill paid after its due
+   month has already ended is settling an old occurrence, so the series still
+   needs its current one: the paid occurrence stays behind as a paid
+   "previous month" record, any occurrences skipped in between come back as
+   unpaid previous-month items, and the bill itself moves to the first
+   occurrence in the current month or later. Bills paid within their own
+   month are left alone — they sit in Paid until the rollover, as usual. */
+function settleLaggingRecurring(b){
+  var step = b.recurrence === 'monthly' ? 1 : (b.recurrence === 'quarterly' ? 3 : 0);
+  if(!step || !b.paid || b.carriedOver || !b.dueDate) return false;
+  var now = todayMid();
+  var thisMonth = now.getFullYear() * 12 + now.getMonth();
+  if(monthIndex(b.dueDate) >= thisMonth) return false;
+  var settled = carriedOverCopy(b);
+  settled.paid = true;
+  var added = [settled];
+  b.dueDate = addMonths(b.dueDate, step);
+  var guard = 0;
+  while(monthIndex(b.dueDate) < thisMonth && guard++ < 24){
+    added.push(carriedOverCopy(b));
+    b.dueDate = addMonths(b.dueDate, step);
+  }
+  b.paid = false;
+  DATA.bills = DATA.bills.concat(added);
+  return true;
+}
+
 function startNextMonth(){
   recordMonthlyPayments();
   // A leftover copy that got paid has now been recorded to history — it was
@@ -2287,6 +2322,7 @@ function startNextMonth(){
     var step = b.recurrence === 'monthly' ? 1 : (b.recurrence === 'quarterly' ? 3 : 0);
     if(!step) return;
     if(b.paid){ b.dueDate = addMonths(b.dueDate, step); b.paid = false; return; }
+    if(!b.dueDate) return; // nothing to carry over without a date
     // Unpaid: every unpaid recurring bill leaves its current occurrence behind
     // and rolls on, whether or not the due date has passed yet. If it's months
     // overdue, keep going — one copy per missed occurrence — until the bill
